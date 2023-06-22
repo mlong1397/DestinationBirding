@@ -13,8 +13,9 @@ where the best times and spots are for looking for a specific bird species.
 Please view the app [here](https://mlong1397.shinyapps.io/DestinationBirding/).
 
 I also wrote a report detailing the thought behind the app and give code
-explanations in the DestinationBirdingReport.Rmd and .html files. The rendered
-html file can be viewed above.
+explanations in the index.Rmd and .html files. The rendered html file can be
+viewed by clicking the [here](https://mlong1397.github.io/DestinationBirding/)
+or on the github pages tab on the right-hand side of the page.
 
 ### Walkthrough Demo
 
@@ -31,6 +32,8 @@ html file can be viewed above.
 
   - a `www` folder with media (images)
 
+- `docs`
+  - contains the R markdown and html files of the report detailing my process
 - `data`
 
   - contains the csv files and the link to google drive files
