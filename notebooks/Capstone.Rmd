@@ -1,0 +1,985 @@
+---
+title: "Capstone"
+author: "Marilyn Long"
+date: "2023-05-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+getwd()
+```
+
+```{r libraries}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(sf)
+library(tmap)
+library(raster)
+library(lubridate) # for dates
+#library(ncdf4)
+library(leaflet)
+library(ggmap)
+library(ggplot2)
+library(viridis)
+#library(chron)
+library(lattice)
+library(RColorBrewer)
+library(auk) # for ebird
+library(reticulate) # for python
+library(osmdata)
+library(rebird) # for eBird API
+
+```
+
+```{r reference from previous}
+# path to the ebird data file
+f <- "Data Sources/Kirtlands/ebd_kirtlands.txt"
+f_out <- "ebd_filtered.txt"
+ebd <- auk_ebd(f)
+
+#create the data frame
+ebird_df <- f %>%
+  auk_ebd() %>%
+  auk_species(species = "Kirtland's Warbler") %>%
+  auk_filter(file = f_out, overwrite = TRUE) %>%
+  read_ebd()
+
+# read in jack pine suitability file
+pine <- st_read(dsn = "Data Sources/Jack Pine Data/Jack Pine/data/iv_105/iv_105.shp")
+
+
+#create a shape
+tm_pine <- tm_shape(pine) + 
+  tm_polygons(col = "ACTUAL", 
+              border.alpha = 0, 
+              #breaks = c(0,20,40,60,70),
+              style = "cont"
+              ) + 
+  tm_layout(legend.position = c("right","bottom"))
+
+#make the ebird data an sf object
+bird_sf <-st_as_sf(ebird_df, coords = c("longitude", "latitude"))
+
+#create a shape
+tm_birds <- tm_shape(bird_sf) + tm_symbols()
+print(tm_birds)
+
+```
+
+```{r AZ birds}
+
+az_birds <- read_csv("data/az_birds.csv")
+
+#converted the kml to a shapefile in QGIS
+az_sites <- st_read("data/az_sites/az_sites.shp")
+
+
+# Extract attribute data and coordinates separately
+attribute_data <- az_sites %>% st_drop_geometry()
+coordinates <- az_sites %>% st_coordinates()
+
+# Create a data frame with coordinates
+az_sites_coords <- data.frame(
+  site_code = attribute_data$site_code,
+  Longitude = coordinates[, "X"],
+  Latitude = coordinates[, "Y"]
+)
+
+# join bird sightings and survey site locations to one df
+bird_sites <- left_join(az_birds, az_sites_coords, by = "site_code")
+
+
+
+```
+
+```{r AZ mapping and EDA}
+#make an sf object for mapping
+library(tmap)
+bird_sites_sf <- bird_sites %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326) %>%
+  st_cast("POINT")
+# map
+tmap_mode("view")
+tm_shape(bird_sites_sf) + 
+  tm_dots()  # I think this isn't working because it's too big?
+bird_sites_2000 <- bird_sites_sf %>%
+  filter(format(survey_date, "%Y") == "2000") #getting a subset
+tm_shape(bird_sites_2000) +
+  tm_dots() # identical to this one and it plots
+#ggmap
+ggmap(get_map(getbb("arizona"), source = "stamen")) +
+  geom_point(data = bird_sites, 
+             aes(x = Longitude, y =Latitude))
+
+```
+
+
+
+```{python imports}
+import numpy as np
+import pandas as pd
+#for shapefile
+import geopandas as gpd
+
+#for plotting
+import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objs as go
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# stats
+from statsmodels.api import tsa # time series analysis
+import statsmodels.api as sm
+
+#TSA
+from sklearn.metrics import mean_absolute_error
+import matplotlib.dates as mdates
+```
+
+```{python read in AZ}
+az_birds = pd.read_csv("data/az_birds.csv")
+
+az_birds.info()
+
+#convert date to datetime
+az_birds["survey_date"] = pd.to_datetime(az_birds["survey_date"])
+
+#view how many species
+species = az_birds["common_name"].value_counts()
+
+# 298 species ranging from seen once to almost 18k times
+species = pd.DataFrame(species)
+
+
+az_birds["survey_date"].value_counts()
+az_birds["survey_date"].hist()
+
+#converted the kml to a shapefile in QGIS
+az_sites = gpd.read_file("./data/az_sites/az_sites.shp")
+az_sites.shape
+
+# join bird sightings and survey site locations to one df
+bird_sites = left_join(az_birds, az_sites_coords, by = "site_code")
+
+# convert to wide_df
+surveys = az_birds.pivot_table(
+  index = "survey_date",
+  columns = "common_name",
+  values = "count",
+  aggfunc = "sum"
+)
+
+```
+
+```{python initial plots}
+# add lines for each column
+fig = px.line(az_birds, x="survey_date", y='bird_count', color = "common_name")
+
+# activate slider
+fig.update_xaxes(rangeslider_visible=True)
+
+fig.show()
+
+# let's look at the most common bird, mourning doves
+
+dove = az_birds[az_birds['common_name'] == "Mourning Dove"]
+
+# add lines for each column
+fig2 = px.line(dove, x="survey_date", y='bird_count', color = "common_name")
+
+# activate slider
+fig2.update_xaxes(rangeslider_visible=True)
+
+fig2.show()
+
+```
+
+
+
+```{python aggregate by month}
+
+az_birds['month_year'] = az_birds['survey_date'].dt.to_period('M')
+
+# Extract year and month as separate columns
+az_birds['year'] = az_birds['survey_date'].dt.year
+az_birds['month'] = az_birds['survey_date'].dt.month
+# Create a new column for month and year combination
+az_birds['month_year'] = az_birds['year'].astype(str) + '-' + az_birds['month'].astype(str)
+
+# Group by month and year combination
+my_grouped = az_birds.groupby(['month_year','common_name']).size().reset_index(name='count')
+
+#convert back to dt
+my_grouped['month_year'] = pd.to_datetime(my_grouped['month_year'], format='%Y-%m')
+
+
+# Separate the categorical variables into different time series
+bird_species = my_grouped['common_name'].unique()
+
+# Perform time series analysis for each bird species
+for species in bird_species:
+    species_data = my_grouped[my_grouped['common_name'] == species]
+    
+    # Example: Plotting the count of the current bird species over time using Plotly Express
+    fig = px.line(species_data, x=species_data.index, y='count', title=species)
+    fig.show()
+    
+
+# time series analysis on one graph
+fig = px.line(az_birds, x="month_year", y='bird_count', color = "common_name")
+
+# activate slider
+fig.update_xaxes(rangeslider_visible=True)
+
+fig.show()
+
+my_grouped.info()
+dove.info()
+
+# let's look at the most common bird, mourning doves
+
+dove = my_grouped[my_grouped['common_name'] == "Mourning Dove"]
+dove2 = my_grouped[my_grouped['common_name'] == "Mourning Dove"].copy()
+dove2['month_year'] = dove2['month_year'].dt.strftime('%Y-%m')
+# add lines for each column
+fig2 = px.line(dove, x="survey_date", y='bird_count', color = "common_name")
+
+# activate slider
+fig2.update_xaxes(rangeslider_visible=True)
+
+fig2.show()
+
+```
+
+
+
+Even with the highest seen bird, there's still too many gaps in the data for this to make sense.
+```{python moving average}
+
+def plot_moving_average(series, window, plot_intervals=False, scale=1.96):
+    rolling_mean = series.rolling(window=window).mean()
+    
+    plt.figure(figsize=(17,8))
+    plt.title('Moving average\n window size = {}'.format(window))
+    
+    # Format x-axis as month-year
+    ax = plt.gca()
+    ax.xaxis.set_major_locator(mdates.YearLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    
+    plt.plot(rolling_mean.index, rolling_mean, 'g', label='Rolling mean trend')
+    
+    # Plot confidence intervals for smoothed values
+    if plot_intervals:
+        mae = mean_absolute_error(series[window:], rolling_mean[window:])
+        deviation = np.std(series[window:] - rolling_mean[window:])
+        lower_bound = rolling_mean - (mae + scale * deviation)
+        upper_bound = rolling_mean + (mae + scale * deviation)
+        plt.plot(upper_bound.index, upper_bound, 'r--', label='Upper bound / Lower bound')
+        plt.plot(lower_bound.index, lower_bound, 'r--')
+            
+    plt.plot(series.index[window:], series[window:], label='Actual values')
+    plt.legend(loc='best')
+    plt.grid(True)
+    
+    # Set x-axis limits
+    #start_date = pd.to_datetime('2000-10-01')
+    #plt.xlim(start_date, series.index.max())
+    
+    # Rotate x-axis labels for better readability
+    plt.xticks(rotation=45)
+    
+
+
+# Convert 'dove.count' to a Pandas Series if needed
+series = pd.Series(dove2['count'])
+
+#Smooth by the previous 5 days (by week)
+plot_moving_average(series 5)
+
+#Smooth by the previous month (30 days)
+plot_moving_average(series, 30)
+plt.show()
+#Smooth by previous quarter (90 days)
+plot_moving_average(series, 90, plot_intervals=True)
+plt.show()
+
+
+
+
+```
+
+What if instead of species, we look for the times of year when bird diversity is the highest? Still too many missing days even if we aggregate into species counts by survey date.
+
+```{python}
+
+# always do this for time series
+first_day = az_birds.survey_date.min()
+last_day = az_birds.survey_date.max()
+
+# pandas `Timestamp` objects
+first_day, last_day
+# date range is 6351 days
+last_day - first_day
+
+# how many days are we missing?
+full_range = pd.date_range(start=first_day, end=last_day, freq="D") # every possible day
+
+full_range.difference(az_birds.survey_date) # index are the ones we have. Returns the missing 
+
+
+# we're missing 4775 days...
+
+
+```
+Going back to ebird. Let's look at the last year for Knox county.
+
+
+```{r ebird Knox County}
+# path to the ebird data file
+f <- "data/May22Apr23KnoxCounty/ebd_US-TN-093_202205_202304_relApr-2023.txt"
+f_out <- "ebd_filtered.txt"
+ebd <- auk_ebd(f)
+
+#create the data frame
+ebird_df <- f %>%
+  auk_ebd() %>%
+ # auk_species() %>%
+  auk_filter(file = f_out, overwrite = TRUE) %>%
+  read_ebd()
+
+# select only relevant columns
+ebird_reduced <- ebird_df %>%
+  dplyr::select(c(checklist_id, common_name, scientific_name, observation_count, locality, latitude, longitude, observation_date)) %>%
+  mutate(observation_count = as.numeric(observation_count)) # convert to numeric
+
+##### Sum species counts for observation_date to get a total species count per day
+
+
+species_sum <- ebird_reduced %>%
+  group_by(observation_date, common_name) %>%
+             summarise(observation_count = sum(observation_count))
+
+pivot_species_sum <- species_sum %>%
+  pivot_wider(names_from = common_name, values_from = observation_count)
+
+# write csv to read in pandas
+write.csv(ebird_df, "data/ebird_df.csv", row.names=TRUE)
+write.csv(ebird_reduced, "data/ebird_reduced.csv", row.names=TRUE)
+write.csv(species_sum, "data/species_sum.csv", row.names=TRUE)
+write.csv(pivot_species_sum, "data/pivot_species_sum.csv", row.names=TRUE)
+
+#make the ebird data an sf object
+bird_sf <-st_as_sf(ebird_df, coords = c("longitude", "latitude"))
+
+#create a shape
+tm_birds <- tm_shape(bird_sf) + tm_symbols()
+#print(tm_birds)
+
+```
+
+```{python ebird Knox County}
+
+ebird_df = pd.read_csv("data/ebird_df.csv")
+ebird_reduced = pd.read_csv("data/ebird_reduced.csv")
+
+#233 species ranging from over 8000 sightings to 1 
+species_counts = pd.DataFrame(ebird_reduced["common_name"].value_counts())
+
+# haha that's me!! 
+avocet = ebird_df[ebird_df["common_name"] == "American Avocet"]
+
+###### TSA ######
+
+
+######Dates
+#convert date to datetime
+ebird_reduced["observation_date"] = pd.to_datetime(ebird_reduced["observation_date"])
+
+
+#get date range for TSA
+
+ebird_reduced.info()
+
+
+# always do this for time series
+first_day = ebird_reduced.observation_date.min()
+last_day = ebird_reduced.observation_date.max()
+
+# pandas `Timestamp` objects
+first_day, last_day
+# date range is 6351 days
+last_day - first_day
+
+# how many days are we missing?
+full_range = pd.date_range(start=first_day, end=last_day, freq="D") # every possible day
+
+full_range.difference(ebird_reduced.observation_date) # index are the ones we have. Returns the missing 
+
+# no missing dates!!
+ebird_reduced["observation_date"].value_counts() # double check
+
+
+##### Read in the sum of species counts for observation_date to get a total species count per day
+
+pivot_species_sum = pd.read_csv("data/pivot_species_sum.csv")
+
+#convert to datetime
+pivot_species_sum["observation_date"] = pd.to_datetime(pivot_species_sum["observation_date"])
+
+# reindex 
+pivot_species_sum = pivot_species_sum.set_index("observation_date")
+pivot_species_sum.drop(columns = "Unnamed: 0", inplace = True)
+
+
+
+##### first go at plotting the series
+# add lines for each column
+fig = px.line(pivot_species_sum, x=pivot_species_sum.index, y=pivot_species_sum.columns,)
+
+# axis labels and title
+fig.update_layout(
+    yaxis_title="Passenger-miles (billions)", 
+    legend_title="", 
+    title="Daily air travel from 1979 to 2002"
+)
+
+# activate slider
+fig.update_xaxes(rangeslider_visible=True)
+
+fig.show()
+######
+
+
+
+# try again with most numerous birds
+species_sum = pd.read_csv("data/species_sum.csv")
+
+# if observation_count is NA, that means somebody marked it as "heard, not seen" so it's present but no count. Originally this was denoted as an X, but when I converted to int, it changed to NaN. I'm gonna go with if it was heard there was at least 1...can revist later
+
+species_sum.fillna(1, inplace = True)
+
+
+# if the values are 365, it means that for every day in the last year when a checklist was submitted, that bird was seen at least once
+days_seen = pd.DataFrame(species_sum["common_name"].value_counts())
+
+# reset index and name the column common name
+days_seen = days_seen.reset_index().rename(columns={'index': 'common_name'})
+
+# let's get birds that were seen on at least 300 occasions
+atleast_300 = days_seen[days_seen['count'] > 300]
+
+# extract these 38 species from the original species sum table
+
+selected_species = species_sum[species_sum['common_name'].isin(atleast_300['common_name'])]
+selected_species.drop(columns = "Unnamed: 0", inplace = True)
+
+pivoted_selected_species = selected_species.pivot(index='observation_date', columns='common_name', values='observation_count')
+
+# Since I chose over 300 sightings, now the NaNs represent the days where that bird wasn't seen. Can use filling techniques to impute
+pivoted_selected_species.info()
+
+# use interpolation to fill
+pivoted_selected_species.interpolate(method = 'linear', inplace = True)
+
+
+### try again with plotting
+# add lines for each column
+fig2 = px.line(pivoted_selected_species, x=pivoted_selected_species.index, y=pivoted_selected_species.columns)
+
+# activate slider
+fig2.update_xaxes(rangeslider_visible=True)
+
+fig2.show()
+######
+
+fig3 = px.line(pivoted_selected_species, x=pivoted_selected_species.index, y=pivoted_selected_species["Northern Cardinal"])
+
+# activate slider
+fig3.update_xaxes(rangeslider_visible=True)
+
+fig3.show()
+
+
+```
+
+What about species diversity instead of individual species?
+
+```{python species diversity}
+
+# group by observation date and count the number of unique common names
+unique_per_day = pd.DataFrame(species_sum.groupby('observation_date')['common_name'].nunique())
+
+# rename columns to species_num
+unique_per_day = unique_per_day.rename(columns={'common_name': 'species_num'})
+
+#plot species diversity
+
+fig4 = px.line(unique_per_day, x=unique_per_day.index, y=unique_per_day.columns)
+
+# activate slider
+fig4.update_xaxes(rangeslider_visible=True)
+
+fig4.show()
+
+# Not bad but need more years to make this more interesting
+```
+
+Trying again with 7 years of data
+
+```{r ebird Knox County}
+# path to the ebird data file
+f2 <- "data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
+f_out2 <- "ebd_filtered.txt"
+ebd <- auk_ebd(f2)
+
+#create the data frame
+ebird_7_df <- f2 %>%
+  auk_ebd() %>%
+ # auk_species() %>%
+  auk_filter(file = f_out2, overwrite = TRUE) %>%
+  read_ebd()
+
+# select only relevant columns
+ebird_7_reduced <- ebird_7_df %>%
+  dplyr::select(c(checklist_id, common_name, scientific_name, observation_count, locality, latitude, longitude, observation_date)) %>%
+  mutate(observation_count = as.numeric(observation_count)) # convert to numeric
+
+
+##### Sum species counts for observation_date to get a total species count per day
+
+
+species_sum_7 <- ebird_7_reduced %>%
+  group_by(observation_date, common_name) %>%
+             summarise(observation_count = sum(observation_count))
+
+pivot_species_sum_7 <- species_sum_7 %>%
+  pivot_wider(names_from = common_name, values_from = observation_count)
+
+# write csv to read in pandas
+write.csv(ebird_7_df, "data/ebird_7_df.csv", row.names=TRUE)
+write.csv(ebird_7_reduced, "data/ebird_7_reduced.csv", row.names=TRUE)
+write.csv(species_sum_7, "data/species_sum_7.csv", row.names=TRUE)
+write.csv(pivot_species_sum_7, "data/pivot_species_sum_7.csv", row.names=TRUE)
+```
+
+
+```{python}
+
+ebird_df_7 = pd.read_csv("data/ebird_7_df.csv")
+ebird_7_reduced = pd.read_csv("data/ebird_7_reduced.csv")
+
+###### TSA ######
+
+
+######Dates
+#convert date to datetime
+ebird_7_reduced["observation_date"] = pd.to_datetime(ebird_7_reduced["observation_date"])
+
+# drop column
+ebird_7_reduced.drop(columns = "Unnamed: 0", inplace = True)
+
+
+#get date range for TSA
+
+ebird_7_reduced.info()
+
+
+# always do this for time series
+first_day = ebird_7_reduced.observation_date.min()
+last_day = ebird_7_reduced.observation_date.max()
+
+# pandas `Timestamp` objects
+first_day, last_day
+# date range is 6351 days
+last_day - first_day
+
+# how many days are we missing?
+full_range = pd.date_range(start=first_day, end=last_day, freq="D") # every possible day
+
+full_range.difference(ebird_7_reduced.observation_date) # index are the ones we have. Returns the missing 
+
+# no missing dates!!
+ebird_7_reduced["observation_date"].value_counts() # double check
+
+
+##### Read in the sum of species counts for observation_date to get a total species count per day
+
+pivot_species_sum_7 = pd.read_csv("data/pivot_species_sum_7.csv")
+
+#convert to datetime
+pivot_species_sum_7["observation_date"] = pd.to_datetime(pivot_species_sum_7["observation_date"])
+
+# reindex 
+pivot_species_sum_7 = pivot_species_sum_7.set_index("observation_date")
+pivot_species_sum_7.drop(columns = "Unnamed: 0", inplace = True)
+
+
+
+##### first go at plotting the series
+# add lines for each column
+fig5 = px.line(pivot_species_sum_7, x=pivot_species_sum_7.index, y=pivot_species_sum_7.columns)
+
+# activate slider
+fig5.update_xaxes(rangeslider_visible=True)
+
+fig5.show()
+######
+
+
+
+# try again with most numerous birds
+species_sum_7 = pd.read_csv("data/species_sum_7.csv")
+
+# if observation_count is NA, that means somebody marked it as "heard, not seen" so it's present but no count. Originally this was denoted as an X, but when I converted to int, it changed to NaN. I'm gonna go with if it was heard there was at least 1...can revist later
+
+species_sum_7.fillna(1, inplace = True)
+
+
+# if the values are 2556, it means that for every day in the last year when a checklist was submitted, that bird was seen at least once
+days_seen_7 = pd.DataFrame(species_sum_7["common_name"].value_counts())
+
+# reset index and name the column common name
+days_seen_7 = days_seen_7.reset_index().rename(columns={'index': 'common_name'})
+
+# let's get birds that were seen on at least 2000 occasions
+atleast_2000 = days_seen_7[days_seen_7['count'] > 2000]
+
+# extract these 28 species from the original species sum table
+
+selected_species_7 = species_sum_7[species_sum_7['common_name'].isin(atleast_2000['common_name'])]
+selected_species_7.drop(columns = "Unnamed: 0", inplace = True)
+
+pivoted_selected_species_7 = selected_species_7.pivot(index='observation_date', columns='common_name', values='observation_count')
+
+# Since I chose over 2000 sightings, now the NaNs represent the days where that bird wasn't seen. Can use filling techniques to impute
+pivoted_selected_species_7.info()
+
+# use interpolation to fill
+pivoted_selected_species_7.interpolate(method = 'linear', inplace = True)
+
+
+### try again with plotting
+# add lines for each column
+fig6 = px.line(pivoted_selected_species_7, x=pivoted_selected_species_7.index, y=pivoted_selected_species_7.columns)
+
+# activate slider
+fig6.update_xaxes(rangeslider_visible=True)
+
+fig6.show()
+######
+
+fig7 = px.line(pivoted_selected_species_7, x=pivoted_selected_species_7.index, y=pivoted_selected_species_7["European Starling"])
+
+# activate slider
+fig7.update_xaxes(rangeslider_visible=True)
+
+fig7.show()
+
+
+```
+
+```{python species diversity 7 years}
+# group by observation date and count the number of unique common names
+unique_per_day_7 = pd.DataFrame(species_sum_7.groupby('observation_date')['common_name'].nunique())
+
+# rename columns to species_num
+unique_per_day_7 = unique_per_day_7.rename(columns={'common_name': 'species_num'})
+
+#plot species diversity
+
+fig8 = px.line(unique_per_day_7, x=unique_per_day_7.index, y=unique_per_day_7.columns)
+
+# activate slider
+fig8.update_xaxes(rangeslider_visible=True)
+
+fig8.show()
+
+# much more encouraging and can see a bit of seasonality perhaps! April/May and Sept seem to be the highest diveristy months which coincides with spring and fall migration so makes sense!
+```
+
+```{python trend seasonal decomp}
+# the "MS" option specifies Monthly frequency by Start day
+#years_7 = unique_per_day_7.reindex(full_range) # this is giving me NaN for species_num
+unique_per_day_7.index = pd.to_datetime(unique_per_day_7.index)
+
+#resample is like groupby but for TS
+unique_per_day_7_monthly = unique_per_day_7.resample("MS").sum()
+
+# decompose the time series
+decomposition = tsa.seasonal_decompose(unique_per_day_7_monthly, model='additive')
+
+# add the decomposition data
+
+unique_per_day_7_monthly["Trend"] = decomposition.trend
+unique_per_day_7_monthly["Seasonal"] = decomposition.seasonal
+unique_per_day_7_monthly["Residual"] = decomposition.resid
+
+unique_per_day_7_monthly.head(10)
+
+# make a plot
+
+cols = ["Trend", "Seasonal", "Residual"]
+
+fig9 = make_subplots(rows=3, cols=1, subplot_titles=cols)
+
+for i, col in enumerate(cols):
+    fig9.add_trace(
+        go.Scatter(x=unique_per_day_7_monthly.index, y=unique_per_day_7_monthly[col]),
+        row=i+1,
+        col=1
+    )
+
+fig9.update_layout(height=800, width=1200, showlegend=False)
+fig9.show()
+```
+
+```{python forecasting}
+unique_per_day_7_monthly["seasonal_difference"] = unique_per_day_7_monthly["species_num"].diff(12)
+unique_per_day_7_monthly[["species_num", "seasonal_difference"]].head(16)
+
+
+# visualize the table of seasonal differences
+fig10 = px.line(unique_per_day_7_monthly, x=unique_per_day_7_monthly.index, y="seasonal_difference")
+
+fig10.update_layout(
+    yaxis_title="Difference", 
+    xaxis_title="Date",
+    title="Change in Species Diveristy over Prior Year"
+)
+
+fig10.show()
+
+'''
+Now, apart from the last year, it looks like we got stationary data:
+- there is no clear trend in the new series, 
+- the variance is relatively constant, and
+- there is no seasonality but some multiyear cycles can be clearly spotted (a _cyclical pattern_ is characterized by rises and falls of uneven frequency). Note that this corresponds to the fast vs slow growth periods that we observed initially.
+
+Our forecasting work will be based on predicting this differenced series instead of the original one.
+
+**Note**: the original revenue series can be restored by using the first 12-month of revenue values and the seasonal differences by recursively adding the differences to the so-far restored values. We will do this once our forecast is ready.
+
+
+
+'''
+
+# splitting the series for evaluation
+
+from sklearn.model_selection import TimeSeriesSplit
+
+# some time series data we would like to split
+train = unique_per_day_7_monthly.loc[unique_per_day_7_monthly.index <= "2021-01-01", "seasonal_difference"].dropna()
+test = unique_per_day_7_monthly.loc[unique_per_day_7_monthly.index > "2021-01-01", "seasonal_difference"]
+
+fig11 = px.scatter(
+    x=unique_per_day_7_monthly["species_num"], 
+    y=unique_per_day_7_monthly["species_num"].shift(3) # 3-month lagged observations
+)
+fig11.update_layout(
+    xaxis_title="Diversity on Current Month", 
+    yaxis_title="Diveristy 3-month Lagged"
+)
+fig11.show()
+
+
+# the seasonality is clearly visible
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+plt.figure(figsize=(15, 5))
+
+# put the acf plot on the current axis
+plot_acf(unique_per_day_7_monthly["species_num"], lags=24, ax=plt.gca())
+plt.xlabel('Lag')
+plt.ylabel('Autocorrelation')
+plt.show()
+
+# the shaded area is the 95% confidence interval for non-significant correlations
+plt.figure(figsize=(15, 5))
+plot_acf(unique_per_day_7_monthly["seasonal_difference"].dropna(), lags=24, ax=plt.gca())
+plt.xlabel('Lag')
+plt.ylabel('Autocorrelation')
+plt.show()
+
+
+# for picking the parameter p, we should include all or most of the significant correlations in the PACF plot. Looks to be 3
+plt.figure(figsize=(15, 5))
+plot_pacf(unique_per_day_7_monthly["seasonal_difference"].dropna(), lags=24, ax=plt.gca(), method='ywm')
+plt.xlabel('Lag')
+plt.ylabel('Partial AC')
+plt.show()
+
+
+# SARIMAX
+
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+# each ARIMA stage has 3 parameters
+# p = AR = autocorr lags
+# d = I = integration (differences until stationary)
+# q = MA = moving average pf errors
+# In SARIMAX, these are in the order tuple
+# SARIMAX (data, order(p,d,q), trend)
+# trend is what kind of line we fit first before ARIMA
+# tend = 'c' = constant
+p_param = 3
+
+# "train" here is already seasonally differenced
+model = SARIMAX(train, order=(p_param, 0, 0), trend="c") # skipping d and q for now
+model_fit = model.fit(disp=0)
+
+model_fit.summary()
+
+# predictions
+predictions = model_fit.predict(start=0, end=len(train)+len(test)-1)
+
+# last date in train
+train.index.max()
+# forecast 5 months out
+model_fit.forecast(steps=5)
+
+
+# view graph
+fig12 = go.Figure()
+fig12.add_trace(go.Scatter(x=train.index, y=train, mode='lines', name="Train"))
+fig12.add_trace(go.Scatter(x=test.index, y=test, mode='lines', name="Test"))
+fig12.add_trace(go.Scatter(x=predictions.index, y=predictions, mode='lines', name="Predictions"))
+fig12.update_xaxes(rangeslider_visible=True)
+fig12.update_layout(
+    yaxis_title="Difference", 
+    xaxis_title="Date",
+    title="Change in Bird Species Diversity over Prior Year"
+)
+fig12.show()
+
+# understand the errors. Define the function
+def mean_absolute_percentage_error(true_values, predicted_values):
+    """
+    Calculate the mean absolute percentage error. 
+    Find the prediction error and devide by the true value, then average.
+    """
+    
+    error = true_values - predicted_values
+    absolute_percentage_error = np.abs(error/true_values)
+    mape = absolute_percentage_error.mean() * 100
+    
+    return mape
+
+train_mape = mean_absolute_percentage_error(train, predictions[train.index])
+test_mape = mean_absolute_percentage_error(test, predictions[test.index])
+
+print(f"Train MAPE on the difference: {round(train_mape, 2)}%")
+print(f"Test MAPE on the difference: {round(test_mape, 2)}%")
+
+# view errors for currect TSA
+train_mape = mean_absolute_percentage_error(train, predictions[train.index])
+test_mape = mean_absolute_percentage_error(test, predictions[test.index])
+
+print(f"Train MAPE on the difference: {round(train_mape, 2)}%")
+print(f"Test MAPE on the difference: {round(test_mape, 2)}%")
+```
+
+```{r truncate lat lon for tableau}
+ebird_core_tunc <- ebird_7_reduced %>%
+  mutate(lat_trunc = round(latitude, digits = 4)) %>%
+  mutate(long_trunc = round(longitude,digits = 4))
+
+# Export the data frame 'df' as a CSV file
+write.csv(ebird_core_tunc, file = "ebird_core_tunc", row.names = TRUE)
+
+
+```
+
+
+ebird API key: 7en92b1ualki
+
+
+```{bash Using eBird API}
+#pip install ebird-api #initially had to install eBird API for python
+```
+
+``` {python ebird}
+from ebird.api import get_regions, get_adjacent_regions, get_region
+
+api_key = "7en92b1ualki"
+
+# Get the list of countries in the world.
+countries = get_regions(api_key, 'country', 'world')
+
+# Get the list of states in the US.
+states = get_regions(api_key, 'subnational1', 'US')
+
+# Get the list of counties in New York state.
+counties = get_regions(api_key, 'subnational2', 'US-TN')
+
+# Get the list of states which border New York state.
+nearby = get_adjacent_regions(api_key, 'US-TN')
+
+# Get the approximate area covered by New York state.
+bounds = get_region(api_key, 'US-TN')
+
+
+import pandas as pd
+api_key = "7en92b1ualki"
+# Get observations from Knox county, TN
+recent_knox = get_observations(api_key, 'US-TN-093')
+```
+
+
+```{r eBird API}
+EBIRD_KEY <- "7en92b1ualki"
+# get some recent Knox County data
+recent_knox <- ebirdregion(key = EBIRD_KEY, loc = "US-TN-093", back = 30)
+
+# convert to SF object
+recent_knox_sf <- recent_knox %>%
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) %>%
+  st_cast("POINT")
+
+#make a map
+tm_shape(recent_knox_sf) +
+  tm_dots(col = "comName") # colors by the common name, but since coordinates overlap only the most recent one is accessible since its "on top"
+
+
+```
+
+
+
+```{python airports}
+
+airports = pd.read_csv("data/airports.csv")
+
+#for i in 
+
+```
+
+
+```{r airports}
+airports <- read_csv("data/airports.csv")
+
+# get (recent) sightings near a major airport
+
+recent_austin <- ebirdgeo(lat = 30.19, 
+                          lng = -97.66, 
+                          dist = 50, # distance in km. Max is 50
+                          back = 30) # days back in time. Max is 30
+# convert to SF object
+
+recent_austin_sf <- recent_austin %>%
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) %>%
+  st_cast("POINT")
+
+#make a map
+tmap_mode("view")
+tm_shape(recent_austin_sf) +
+  tm_dots(col = "comName")
+
+
+
+
+
+```
+

@@ -1,0 +1,990 @@
+---
+title: "Capstone2"
+author: "Marilyn Long"
+date: "2023-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+getwd()
+```
+
+```{r libraries, message = FALSE}
+# load libraries
+library(tidyverse)
+library(dplyr)
+library(sf)
+library(tmap)
+#library(raster)
+library(lubridate) # for dates
+#library(leaflet)
+#library(ggmap)
+library(ggplot2)
+library(viridis)
+#library(chron)
+library(lattice)
+#library(RColorBrewer)
+library(auk) # for ebird
+library(reticulate) # for python
+library(Metrics)
+library(dbscan)
+#library(osmdata)
+#library(rebird) # for eBird API
+
+```
+
+
+```{python imports, message = FALSE}
+import numpy as np
+import pandas as pd
+#for shapefile
+import geopandas as gpd
+
+#for plotting
+import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objs as go
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# stats
+from statsmodels.api import tsa # time series analysis
+import statsmodels.api as sm
+
+#TSA
+from sklearn.metrics import mean_absolute_error
+import matplotlib.dates as mdates
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+```
+
+
+```{r ebird Knox County, eval = FALSE}
+# path to the ebird data file
+f2 <- "data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
+f_out2 <- "ebd_filtered.txt"
+ebd <- auk_ebd(f2)
+
+#create the data frame
+ebird_7_df <- f2 %>%
+  auk_ebd() %>%
+ # auk_species() %>%
+  auk_filter(file = f_out2, overwrite = TRUE) %>%
+  read_ebd()
+
+# select only relevant columns
+ebird_7_reduced <- ebird_7_df %>%
+  dplyr::select(c(checklist_id, common_name, scientific_name, observation_count, locality, latitude, longitude, observation_date)) %>%
+  mutate(observation_count = as.numeric(observation_count)) # convert to numeric
+
+
+##### Sum species counts for observation_date to get a total species count per day
+
+
+species_sum_7 <- ebird_7_reduced %>%
+  group_by(observation_date, common_name) %>%
+             summarise(observation_count = sum(observation_count))
+
+pivot_species_sum_7 <- species_sum_7 %>%
+  pivot_wider(names_from = common_name, values_from = observation_count)
+
+```
+
+
+
+Read in eBird Data for Modeling in Python
+
+```{python load data, results = 'hide'}
+#ebird_df_7 = pd.read_csv("/Users/carlosmunoz/capstone-repo-mlong1397/data/ebird_7_df.csv")
+ebird_7_reduced = pd.read_csv("data/ebird_7_reduced.csv")
+species_sum_7 = pd.read_csv("data/species_sum_7.csv")
+
+
+#convert date to datetime
+ebird_7_reduced["observation_date"] = pd.to_datetime(ebird_7_reduced["observation_date"])
+
+
+# get first and last day in the series
+first_day = ebird_7_reduced.observation_date.min()
+last_day = ebird_7_reduced.observation_date.max()
+
+
+
+# how many days are we missing? None!
+full_range = pd.date_range(start=first_day, end=last_day, freq="D") # every possible day
+
+full_range.difference(ebird_7_reduced.observation_date) # index are the ones we have. Returns the missing 
+
+#drop extra column from dfs
+species_sum_7.drop(columns = "Unnamed: 0", inplace = True)
+ebird_7_reduced.drop(columns = "Unnamed: 0", inplace = True)
+#ebird_df_7.drop(columns = "Unnamed: 0", inplace = True)
+
+# fill the NAs which represent heard not seen with 1
+species_sum_7.fillna(1, inplace = True)
+
+
+```
+
+# Time Series Model for Species Diversity in Knox County
+```{python species diversity, results = 'hide'}
+
+# group by observation date and count the number of unique common names
+unique_per_day_7 = pd.DataFrame(species_sum_7.groupby('observation_date')['common_name'].nunique())
+
+# rename columns to species_num
+unique_per_day_7 = unique_per_day_7.rename(columns={'common_name': 'species_num'})
+
+#plot species diversity
+
+fig1 = px.line(unique_per_day_7, x=unique_per_day_7.index, y=unique_per_day_7.columns)
+
+# activate slider
+fig1.update_xaxes(rangeslider_visible=True)
+
+#fig1.show()
+
+```
+
+
+## Seasonal Trend Decomposition for Species Diversity
+
+```{python diversity trend decomp, fig.keep = 'last'}
+# the "MS" option specifies Monthly frequency by Start day
+unique_per_day_7.index = pd.to_datetime(unique_per_day_7.index)
+
+#resample is like groupby but for TS
+unique_per_day_7_monthly = unique_per_day_7.resample("MS").mean()
+
+# decompose the time series
+decomposition = tsa.seasonal_decompose(unique_per_day_7_monthly, model='additive')
+
+# add the decomposition data
+
+unique_per_day_7_monthly["Trend"] = decomposition.trend
+unique_per_day_7_monthly["Seasonal"] = decomposition.seasonal
+unique_per_day_7_monthly["Residual"] = decomposition.resid
+
+
+# make a plot
+
+cols = ["Trend", "Seasonal", "Residual"]
+
+fig2 = make_subplots(rows=3, cols=1, subplot_titles=cols)
+
+for i, col in enumerate(cols):
+    fig2.add_trace(
+        go.Scatter(x=unique_per_day_7_monthly.index, y=unique_per_day_7_monthly[col]),
+        row=i+1,
+        col=1
+    )
+
+#fig2.update_layout(height=800, width=1200, showlegend=False)
+#fig2.show()
+```
+We can make a few observations immediately:
+
+The trend is clearly upward, we can observe a long period where species diversity plateaued 2016-2019 followed by a steady (linear) increase. Makes sense with covid in 2020 when everyone got into birding
+
+The seasonal plot shows peaks in the spring, with migration
+
+We can see that the residual still shows some seasonality.
+
+## Forecasting Species Diversity
+
+```{python species diversity forecasting}
+# group by observation date and count the number of unique common names
+unique_per_day_7 = pd.DataFrame(species_sum_7.groupby('observation_date')['common_name'].nunique()).reset_index()
+
+# rename columns to species_num
+unique_per_day_7 = unique_per_day_7.rename(columns={'common_name': 'species_num'})
+
+# copy this dataframe to a new one called Monthly Diversity
+monthly_diversity = unique_per_day_7.copy()
+
+# Convert the "observation_date" column to a pandas datetime data type
+monthly_diversity['observation_date'] = pd.to_datetime(monthly_diversity['observation_date'])
+
+# Extract the month and year components
+monthly_diversity['month'] = monthly_diversity['observation_date'].dt.month
+monthly_diversity['year'] = monthly_diversity['observation_date'].dt.year
+
+# Group the DataFrame by month and year, and calculate the average species_num
+monthly_diversity = monthly_diversity.groupby(['month', 'year']).mean('species_num')
+
+# Reset the index
+monthly_diversity = monthly_diversity.reset_index()
+
+# Combine month and year into a new column as string
+monthly_diversity['month_year'] = monthly_diversity['year'].astype(str) + '-' + monthly_diversity['month'].astype(str)
+
+# Convert the "month_year" column to a pandas datetime data type
+monthly_diversity['month_year'] = pd.to_datetime(monthly_diversity['month_year'], format='%Y-%m')
+
+# Set the "month_year" column as the index
+monthly_diversity = monthly_diversity.set_index('month_year')
+
+# drop the redundant month and year columns
+monthly_diversity.drop(columns = ["month", "year"], inplace= True)
+
+# Round the "species_num" column to a whole number
+monthly_diversity['species_num'] = monthly_diversity['species_num'].round(decimals=0)
+
+# Set the frequency of the index to 'MS' (Month Start)
+monthly_diversity = monthly_diversity.asfreq('MS')
+```
+
+```{python error function}
+# understand the errors. Define the function
+def mean_absolute_percentage_error(true_values, predicted_values):
+    """
+    Calculate the mean absolute percentage error. 
+    Find the prediction error and devide by the true value, then average.
+    """
+    
+    error = true_values - predicted_values
+    absolute_percentage_error = np.abs(error/true_values)
+    mape = absolute_percentage_error.mean() * 100
+    
+    return mape
+```
+
+Split the data into train and test sets
+
+``` {python plot forecast}
+
+# time series data we would like to split
+
+train = monthly_diversity.loc[monthly_diversity.index <= "2021-01-01", "species_num"].dropna()
+
+test = monthly_diversity.loc[monthly_diversity.index > "2021-01-01", "species_num"]
+```
+
+View the Partial Autocorrelation Plot to get the p parameter for the ARIMA
+``` {python lags plot}
+# get the lags
+
+plt.figure(figsize=(15, 5))
+plot_pacf(monthly_diversity["species_num"].dropna(), lags=24, ax=plt.gca())
+plt.xlabel('Lag')
+plt.ylabel('Autocorrelation')
+plt.show()
+
+# lags = 1
+
+```
+
+Create the ARIMA model 
+``` {python arima}
+# ARIMA
+
+p_param = 1
+d_param = 0
+q_param = 2
+sP = 0 #seasonal
+sD = 1
+sQ = 0
+season = 12 #12 months
+
+
+model = SARIMAX(train, 
+                order=(p_param, d_param, q_param), 
+                seasonal_order= (sP,sD,sQ,season),
+                trend="c")
+model_fit = model.fit(disp=0)
+
+predictions = model_fit.predict(start=train.shape[0], end=train.shape[0]+test.shape[0]-1)
+predictions.index = test.index
+
+mean_absolute_percentage_error(test.values, predictions)
+```
+
+``` {python plot tsa, results = 'hide'}
+# plot time series for species diversity
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=train.index, y=train, mode='lines', name="Train"))
+fig.add_trace(go.Scatter(x=test.index, y=test, mode='lines', name="Test"))
+fig.add_trace(go.Scatter(x=predictions.index, y=predictions, mode='lines', name="Predictions"))
+fig.update_xaxes(rangeslider_visible=True)
+fig.update_layout(
+    yaxis_title="Number of Bird Species", 
+    xaxis_title="Date",
+    title="Predicting Species Diversity"
+)
+
+fig.show()
+
+```
+
+
+# Predicting Observation Counts for Target Species
+
+``` {python target species TSA}
+
+grouped_month = species_sum_7.copy()
+
+# Convert the "observation date" column to a datetime data type
+grouped_month['observation_date'] = pd.to_datetime(grouped_month['observation_date'])
+
+# Convert the observation date to month-year string format
+grouped_month['month_year'] = grouped_month['observation_date'].dt.to_period('M').astype(str)
+grouped_month.to_csv("/Users/carlosmunoz/Desktop/grouped_month.csv")
+
+# Define the bird species you are interested in
+target_species = 'Pine Warbler'
+
+# Filter the ranked DataFrame for the target species
+target_species_df = grouped_month[grouped_month['common_name'] == target_species]
+
+# Group the data by month and average the counts
+target_species_month = target_species_df.groupby('month_year')['observation_count'].mean().reset_index()
+
+# Convert the month_year column to a datetime index with monthly frequency
+target_species_month.index = pd.to_datetime(target_species_month['month_year'])
+target_species_month = target_species_month.resample("MS").sum()
+
+# decompose the time series
+decomposition = tsa.seasonal_decompose(target_species_month['observation_count'], model='additive')
+
+# add the decomposition data
+
+target_species_month["Trend"] = decomposition.trend
+target_species_month["Seasonal"] = decomposition.seasonal
+target_species_month["Residual"] = decomposition.resid
+
+# time series data we would like to split
+train = target_species_month.loc[target_species_month.index <= "2021-01-01", "observation_count"].dropna()
+test = target_species_month.loc[target_species_month.index > "2021-01-01", "observation_count"]
+
+plt.figure(figsize=(15, 5))
+plot_pacf(target_species_month["observation_count"].dropna(), lags=24, ax=plt.gca())
+plt.xlabel('Lag')
+plt.ylabel('Autocorrelation')
+plt.show()
+
+#WITH TRAINING
+
+p_param = 1
+d_param = 0
+q_param = 2
+sP = 0 #seasonal
+sD = 1
+sQ = 0
+season = 12 #12 months
+
+
+model2 = SARIMAX(train, 
+                order=(p_param, d_param, q_param), 
+                seasonal_order= (sP,sD,sQ,season),
+                trend="c")
+model_fit2 = model2.fit(disp=0)
+
+predictions2 = model_fit2.predict(start=train.shape[0], end=train.shape[0]+test.shape[0]-1)
+#train_mape = mean_absolute_percentage_error(train, predictions[train.index])
+mean_absolute_percentage_error(test.values, predictions2)
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=train.index, y=train, mode='lines', name="Train"))
+fig.add_trace(go.Scatter(x=test.index, y=test, mode='lines', name="Test"))
+fig.add_trace(go.Scatter(x=predictions2.index, y=predictions2, mode='lines', name="Predictions"))
+fig.update_xaxes(rangeslider_visible=True)
+fig.update_layout(
+    yaxis_title="Observation Counts", 
+    xaxis_title="Date",
+    title="Predicting Observation Counts for the Pine Warbler"
+)
+fig.show()
+```
+
+
+```{r tsa}
+library(zoo)
+library(dplyr)
+
+target_species = "American Goldfinch"
+# Filter the ranked DataFrame for the target species
+grouped_month <- read.csv("data/grouped_month.csv")
+
+# Filter the bird observation data for the target species
+target_species_df <- grouped_month[grouped_month$common_name == target_species, ]
+
+# Group the data by month and average the counts
+target_species_month <- target_species_df %>%
+  group_by(month_year) %>%
+  summarise(observation_count = mean(observation_count))
+
+# Convert month_year to yearmon object
+target_species_month$month_year <- as.yearmon(target_species_month$month_year, format = "%Y-%m")
+
+# Convert yearmon to numeric representation for sequence generation
+target_species_month$month_year_numeric <- as.numeric(target_species_month$month_year)
+
+# Complete the target_species_month dataframe with missing months and set observation_count to 0
+target_species_month <- target_species_month %>%
+  complete(month_year_numeric = seq(min(target_species_month$month_year_numeric), 
+                                    max(target_species_month$month_year_numeric), by = 1/12)) %>%
+  mutate(month_year = as.yearmon(month_year_numeric),
+         observation_count = replace(observation_count, is.na(observation_count), 0)) %>%
+  select(-month_year_numeric)
+
+  # Time series data for training and testing
+    train <- target_species_month[target_species_month$month_year <= "2021-01-01", "observation_count"]
+    test <- target_species_month[target_species_month$month_year > "2021-01-01", "observation_count"]
+   
+
+```
+
+```{r SARIMA}
+    train_ts <- ts(train, frequency = 12)
+    test_ts <- ts(test, frequency = 12)
+    
+
+    Lambda<- BoxCox.lambda(train_ts)
+    
+    # Fit the SARIMA model
+        model <- auto.arima(train_ts,
+                      #  d = 0,
+                     #   D = 1,
+                        max.p = 5,
+                        max.q = 5,
+                        max.P = 2,
+                        max.Q = 2,
+                        max.order = 5,
+                        max.d = 2,
+                        max.D = 2,
+                        start.p = 1,
+                        start.q = 0,
+                        start.P = 0,
+                        start.Q = 0)
+    
+    # Make predictions
+    predictions <- forecast(model, h = length(test_ts))
+    
+    # check residuals
+    checkresiduals(predictions)
+    
+    # check accuracy
+    accuracy(predictions)
+
+    
+    # Extract the point forecasts from the predictions
+    predictions_values <- as.vector(predictions$mean)
+    
+    # Convert predictions to a list
+    predictions_list <- as.list(predictions_values)
+    
+    
+    autoplot(predictions)
+```
+
+
+```{r python arima predictions}
+    # Pass train and test data to Python
+    py$train <- train
+    py$test <- test
+    
+    # Run SARIMAX model
+    py_run_string("
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+import numpy as np
+
+model = SARIMAX(train, order=(1, 0, 2), seasonal_order=(0, 1, 0, 12), trend='c')
+model_fit = model.fit(disp=False, maxiter=200)
+predictions = model_fit.predict(start=len(train), end=len(train)+len(test)-1)
+predictions_np = np.array(predictions)
+predictions_list = predictions_np.tolist()
+")
+    
+        # Retrieve the predicted values from Python
+    predictions_list_py <- py$predictions_list
+    
+    # Convert predictions to an R vector
+    predictions_py <- as.vector(predictions_list_py)
+```
+
+
+
+
+```{r plotly}
+library(plotly)
+
+# Filter the target_species_month data for train and test sets
+train_dates <- target_species_month$month_year[target_species_month$month_year <= as.yearmon("2021-01")]
+test_dates <- target_species_month$month_year[target_species_month$month_year > as.yearmon("2021-01")]
+
+# Filter the observation counts for train and test sets
+train_counts <- target_species_month$observation_count[target_species_month$month_year <= as.yearmon("2021-01")]
+test_counts <- target_species_month$observation_count[target_species_month$month_year > as.yearmon("2021-01")]
+
+# Create the time series plot
+time_series_plot <- plot_ly() %>%
+  add_lines(x = train_dates, y = train_counts, name = "Actual (Train)") %>%
+  add_lines(x = test_dates, y = test_counts, name = "Actual (Test)") %>%
+  add_lines(x = test_dates, y = predictions_list, name = "Predicted") %>%
+  layout(xaxis = list(title = "Date"), yaxis = list(title = "Observation Count"),
+         title = paste("Time Series Analysis for", target_species))
+ 
+time_series_plot
+
+# #define mean_absolute erros
+# mean_absolute_percentage_error <- function(true_values, predicted_values) {
+#   error <- true_values - predicted_values
+#   print(error)
+#   print(true_values)
+#   absolute_percentage_error <- abs(error / true_values)
+#   print(absolute_percentage_error)
+#   mape <- mean(absolute_percentage_error) * 100
+#   return(mape)
+# }
+
+# mean_absolute_percentage_error <- function(true_values, predicted_values) {
+#   print(true_values)
+#   print(predicted_values)
+#   error <- true_values - predicted_values
+#   print(error)
+#   absolute_percentage_error <- abs(error / true_values)
+#   print(absolute_percentage_error)
+#   absolute_percentage_error[true_values == 0] <- 0  # Set absolute percentage error to 0 when true value is 0
+#    mape <- mean(absolute_percentage_error, na.rm = TRUE) * 100 
+#    mape <- round(mape, 2)
+#   return(mape)
+# }
+ 
+
+# Extract the observation count column from the train dataframe
+#train_counts <- train$observation_count
+test_counts <- test$observation_count
+
+# Calculate and print MAPE
+#train_mape <- mean_absolute_percentage_error(train_counts, predictions[1:length(train_counts)])
+#test_mape <- mean_absolute_percentage_error(test_counts, predictions[1:length(predictions)])
+#test_mape <- mean_absolute_percentage_error(test_counts, predictions_list)
+
+#test_mape
+
+#rae(test_counts, predictions_list)
+
+```
+
+```{r ggplotly}
+date_test <- as.Date(paste(test_dates, "01"), format = "%b %Y %d")          
+
+
+date_train <- as.Date(paste(train_dates, "01"), format = "%b %Y %d")    
+# Convert predictions_list from list to vector
+predictions_values <- unlist(predictions_list)
+
+time_series_plot <- ggplot() +
+      geom_line(data = data.frame(x = date_train, y = train_counts),
+                aes(x = x, y = y, color = "Actual (Train)"),
+                linetype = "solid",
+                size = 1.5,
+                na.rm = TRUE) +
+      geom_line(data = data.frame(x = date_test, y = test_counts),
+                aes(x = x, y = y, color = "Actual (Test)"),
+                linetype = "solid",
+                size = 1.5,
+                alpha = .8,
+                na.rm = TRUE) +
+      geom_line(data = data.frame(x = date_test, y = predictions_py),
+                aes(x = x, y = y, color = "Predicted"),
+                linetype = "dotdash" ,
+                size = 1.5,
+                alpha = .8,
+                na.rm = TRUE) +
+      labs(x = "Date",
+           y = "Observation Count",
+           colour = "Legend",
+           title = paste("Python Time Series Analysis for", target_species)) +
+      scale_color_manual(values = c("Actual (Train)" = "#C7C7C7",
+                                    "Actual (Test)" = "#97D8ED",
+                                    "Predicted" = "#4B8FA6")) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+time_series_plot
+
+str(test_dates)
+
+        
+
+```
+
+
+```{r original species diversity tmap}
+
+species_counts <- ebird_7_reduced %>%
+  dplyr::group_by(latitude, longitude, locality) %>%
+  summarise(unique_common_names = n_distinct(common_name))
+
+grouped_counts <- ebird_7_reduced %>%
+  group_by(latitude, longitude) %>%
+  summarise(unique_common_names = n_distinct(common_name))
+
+# create and SF object to use with tmap
+grouped_counts_sf <- grouped_counts %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) %>%
+  st_cast("POINT")
+
+
+# create a map
+tmap_mode("view")
+tm_shape(grouped_counts_sf)+
+  tm_bubbles(col = "blue", 
+             alpha = .5,
+             size = "unique_common_names", 
+             border.col = "black", 
+             border.lwd = 0.1) +
+  tm_basemap("OpenStreetMap")
+
+```
+
+```{r cluster}
+
+library(lubridate)
+
+choices = unique(bird_data$month)
+
+# Get user input for the month
+input_month <- "06"   # Example: June
+              
+
+# Filter data by month
+select_bird_data <- ebird_7_reduced %>%
+  mutate(month = format(as.Date(observation_date), "%m")) %>%
+  #filter(month(observation_date) == input_month) 
+  filter(month == input_month)
+
+str(select_bird_data)
+
+# Perform clustering
+clusters <- kmeans(select_bird_data[, c("latitude", "longitude")], centers = 40)
+
+# Add cluster labels to the filtered dataframe
+select_bird_data$cluster <- clusters$cluster
+
+# Aggregate data by cluster and common name
+moded_agg_data <- select_bird_data %>%
+  
+  # add a column n with counts of the locality names at each cluster (most frequent name)
+  add_count(cluster, locality) %>%
+  
+  group_by(cluster) %>%
+  
+  # only keep the most frequent locality name per cluster
+  mutate(Majority = locality[n == max(n)][1]) %>%
+  
+  # do not keep temp var
+  select(-n) %>%
+  
+  
+  summarize(distinct_common_names = n_distinct(common_name), # number of distinct species per  cluster
+            latitude = mean(latitude),
+            longitude = mean(longitude),
+            locality = Majority) %>%
+  ungroup()
+
+    # Prepare the text for tooltips:
+    mytext <- paste(
+      "Location: ", md_agg_data$locality,"<br/>", 
+      "Number of Species: ", md_agg_data$distinct_common_names, "<br/>", 
+      sep="") %>%
+      lapply(htmltools::HTML)
+
+# Create proportional symbol map
+leaflet(md_agg_data) %>%
+  addTiles() %>%
+  setView(lng = mean(select_bird_data$longitude), lat = mean(select_bird_data$latitude), zoom = 10) %>%
+  addCircleMarkers(
+    lng = ~longitude, lat = ~latitude,
+    weight = 1, color = "black",
+    radius = ~distinct_common_names / 10,  # Adjust the size of the circles based on count
+    fillOpacity = 0.7,
+    label = mytext,
+    #labelOptions = labelOptions(noHide = TRUE, textOnly = TRUE)
+  )
+
+
+```
+
+
+
+```{r cleaning up locality}
+
+# Assuming your data frame is named 'df' and the locality column is named 'locality'
+locality_counts <- table(ebird_7_reduced$locality)
+df_unique <- data.frame(locality = names(locality_counts), count = as.vector(locality_counts))
+
+# remove from ebird_7_reduced where locality count is 1 in df_unique
+
+filtered_locality <- subset(ebird_7_reduced, !(locality %in% df_unique$locality[df_unique$count == 1]))
+
+
+# grouped_counts_locality <- filtered_locality %>%
+#   group_by(locality, longitude, latitude) %>%
+#   summarise(unique_common_names = n_distinct(common_name))
+
+# if the first 15 characters are identical, group the observation and take the average lat/lon
+grouped_averages <- filtered_locality %>%
+  mutate(locality_group = substr(locality, 1, 15)) %>%
+  group_by(locality_group) %>%
+  summarise(locality = first(locality),
+            avg_latitude = mean(latitude),
+            avg_longitude = mean(longitude),
+            distinct_common_names = n_distinct(common_name))
+
+# create and SF object to use with tmap
+grouped_averages_sf <- grouped_averages %>%
+  st_as_sf(coords = c("avg_longitude", "avg_latitude"), crs = 4326) %>%
+  st_cast("POINT")
+
+
+# create a map
+tmap_mode("view")
+tm_shape(grouped_averages_sf)+
+  tm_bubbles(col = "blue", 
+             alpha = .5,
+             size = "distinct_common_names", 
+             border.col = "black", 
+             border.lwd = 0.1) +
+  tm_basemap("OpenStreetMap")
+
+
+```
+
+```{r diversitymonth filter}
+
+bird_data %>%
+  mutate(month = format(as.Date(observation_date), "%m"))
+
+# filter for a month
+filtered_data <- 
+    bird_data %>%
+      filter(month == "01")
+
+
+#filtered_locality <- subset(filtered_data, !(locality %in% df_unique$locality[df_unique$count == 1]))
+
+
+
+grouped_counts_locality <- filtered_locality %>%
+  group_by(locality, longitude, latitude) %>%
+  summarise(unique_common_names = n_distinct(common_name))
+
+# if the first 15 characters are identical, group the observation and take the average lat/lon
+grouped_averages <- filtered_locality %>%
+  mutate(locality_group = substr(locality, 1, 15)) %>%
+  group_by(locality_group) %>%
+  summarise(locality = first(locality),
+            avg_latitude = mean(latitude),
+            avg_longitude = mean(longitude),
+            distinct_common_names = n_distinct(common_name))
+
+# create and SF object to use with tmap
+grouped_averages_sf <- grouped_averages %>%
+  st_as_sf(coords = c("avg_longitude", "avg_latitude"), crs = 4326) %>%
+  st_cast("POINT")
+
+
+# create a map
+tmap_mode("view")
+tm_shape(grouped_averages_sf)+
+  tm_bubbles(col = "blue", 
+             alpha = .5,
+             size = "distinct_common_names", 
+             border.col = "black", 
+             border.lwd = 0.1) +
+  tm_basemap("OpenStreetMap")
+
+```
+
+```{r diversity map}
+
+
+# remove birds that are seen frequently. If you're purposefully trying to find a species, it's not going to be a common one (like a robin, chickadee etc)
+
+# # Group the data by observation date and common name, and count the occurrences
+# all_birds <- bird_data %>%
+#   group_by(common_name) %>%
+#   summarise(days_seen = n_distinct(observation_date))
+# 
+# aa<-ebird_7_reduced %>%
+#   filter(common_name == "American Avocet")
+bird_data <- read.csv("data/ebird_7_reduced.csv")
+bird_data$observation_date <- as.Date(bird_data$observation_date)
+bird_data$month <- format(bird_data$observation_date, "%m")
+
+bd <- bird_data %>%
+      filter(common_name == "Yellow-rumped Warbler") %>%
+      filter(month == "09") %>%
+    # mutate(rounded_lat = round(latitude,3)) %>%
+  #  mutate(rounded_lon = round(longitude,3)) %>%
+     group_by(latitude, longitude) %>%
+     summarise(sum_counts = sum(observation_count))
+
+
+# Prepare the text for tooltips:
+  mytext <- paste(
+  "Location: ", bd$locality,"<br/>", 
+  "Number of Observations: ", bd$sum_counts, "<br/>", 
+    sep="") %>%
+    lapply(htmltools::HTML)
+  
+   max_count <- max(bd$sum_counts, na.rm = TRUE)
+        
+         # Define a color palette for the bubbles
+   color_gradient <- colorRampPalette(c("#EFEFFF", "#4B0082"))  # Light blue to indigo
+   
+      pal <- colorNumeric(
+        palette = "Blues",
+        domain = bd$sum_counts
+        
+      )
+        
+        # Define the scaling factor for bubble sizes
+        scaling_factor <- 10 / max_count
+  
+leaflet(bd) %>%
+  addTiles() %>%
+  setView(lng = mean(bd$longitude), lat = mean(bd$latitude), zoom = 10) %>%
+  addCircleMarkers(
+    lng = ~longitude, 
+    lat = ~latitude,
+    weight = 1, 
+    color = "black",
+    fillColor = ~pal(sum_counts),
+    radius = ~sum_counts * scaling_factor ,  # Adjust the size of the circles based on count
+    fillOpacity = 0.7,
+    stroke = TRUE,
+   label = mytext
+    #labelOptions = labelOptions(noHide = TRUE, textOnly = TRUE)
+  )
+```
+
+
+```{r dbscan leaflet}
+
+# Define the range of eps and minPts values to explore
+eps_range <- seq(0.001, 0.1, by = 0.005)
+
+minPts_range <- seq(5, 40, by = 5)
+
+# Variables to store the optimal parameters and number of clusters
+optimal_eps <- 0
+optimal_minPts <- 0
+optimal_num_clusters <- 0
+
+# Iterate through different parameter combinations
+for (eps in eps_range) {
+  for (minPts in minPts_range) {
+    # Perform DBSCAN clustering
+    dbscan_result <- dbscan(bd[, c("longitude", "latitude")], eps = eps, minPts = minPts)
+    
+    # Get the number of clusters
+    num_clusters <- max(dbscan_result$cluster)
+    
+    # Update the optimal parameters if a better number of clusters is found within the desired range
+    if (num_clusters >= 5 && num_clusters <= 40 && num_clusters < optimal_num_clusters) {
+      optimal_eps <- eps
+      optimal_minPts <- minPts
+      optimal_num_clusters <- num_clusters
+    }
+  }
+}
+
+# Print the optimal parameter values and number of clusters
+cat("Optimal eps:", optimal_eps, "\n")
+cat("Optimal minPts:", optimal_minPts, "\n")
+cat("Optimal number of clusters:", optimal_num_clusters, "\n")
+# Run DBSCAN clustering
+
+dbscan_result <- dbscan(bd[, c("longitude", "latitude")], eps = optimal_eps, minPts = optimal_minPts)
+
+# Add cluster ID to the original data
+bd$cluster_id <- dbscan_result$cluster
+
+# Aggregate the unique number of common_name by cluster
+cluster_summary <- bd %>%
+  group_by(cluster_id) %>%
+  summarise(sum_counts = sum(observation_count))
+
+# Merge cluster summary with original data
+bd <- merge(bd, cluster_summary, by = "cluster_id")
+
+```
+
+```{r when where map}
+# map data
+when_where_map <- bird_data %>%
+   filter(common_name == "American Black Duck") %>%
+          filter(month == "01") %>%
+          group_by(latitude, longitude, locality) %>%
+          summarise(sum_counts = mean(observation_count))
+
+
+# show map
+
+            leaflet(when_where_map) %>%
+              addTiles() %>%
+              addCircleMarkers(
+                lng = ~longitude,
+                lat = ~latitude,
+                weight = 1,
+                fillColor = ~pal(sum_counts),
+                color = "black", 
+                stroke = TRUE,
+                radius = ~sum_counts * 10,  # Apply the scaling factor
+                fillOpacity = .7,
+                label = mytext)
+            
+# bar chart data
+when_where_chart <- bird_data %>%
+   filter(common_name == "American Black Duck") %>%
+          filter(month == "01")
+
+# show bar chart
+            
+#when_where_chart$observation_count <- as.numeric(when_where_chart$observation_count)
+        
+        # Convert observation_date to Date format
+     #   when_where_chart$observation_date <- as.Date(when_where_chart$observation_date)
+        
+        # Filter data based on species input
+    #   species_data <- bird_data %>%
+     #    filter(common_name == "American Black Duck")
+        
+        # Aggregate by month and count the observations
+        # monthly_counts <- aggregate(observation_count ~ format(observation_date, "%b"), 
+        #                             data = when_where_chart, 
+        #                             FUN = mean)
+        monthly_counts <- when_where_chart %>%
+                            group_by(month) #%>%
+                           summarise(monthly_sum = round(sum(observation_count)))
+                                      # monthly_mean = mean(monthly_sum)) 
+        
+       # colnames(monthly_counts) <- c("Month", "Observation_Count")
+        
+        # Convert Month to factor with ordered levels
+        monthly_counts$month <- factor(monthly_counts$month, levels = month.abb)
+        
+        # Create the bar chart
+        # ggplot(monthly_counts, aes(x = Month, y = Observation_Count)) +
+        #   geom_bar(stat = "identity", fill = "purple") +
+        #   labs(x = "Month", y = "Observation Count", title = "Number of Observations by Month")
+        
+        # Create the bar chart using Plotly
+        plot_ly(monthly_counts, 
+                x = ~Month, 
+                y = ~average_num_obs, 
+                type = "bar", 
+                marker = list(color = "purple")) %>%
+          layout(xaxis = list(title = "Month"), 
+                 yaxis = list(title = "Average Observation Count"), 
+                 title = "Average Number of Observations by Month")
+            
+
+```
+
+```{r}
+## impute data using funk to fill NA observation counts??
+```
+
