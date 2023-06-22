@@ -136,7 +136,7 @@ shinyUI(fluidPage(
               width = 12,
               h4("Instructions"),
               p("Use the dropdown menu to select a month. The map will display the number of 
-                bird species seen for the selected month. The data is clustered into 40 locations 
+                bird species seen for the selected month. The data is clustered into 30 locations 
                 around Knoxville. If you hover over a point, you will see the name of the 
                 locality (ex: Seven Islands State Birding Park) and the number of different 
                 species seen."),
