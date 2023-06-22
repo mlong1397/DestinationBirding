@@ -101,11 +101,10 @@ server <- function(input, output, session) {
       
       
       ##################    INITIAL FILTERING AND DATA MANIPULATION    ##################    
-      target_species_df <- tsa_bird_data %>%
-        filter(common_name == target_species)
       
       # Filter the bird observation data for the target species
-      #target_species_df <- bird_data[bird_data$common_name == target_species, ]
+      target_species_df <- tsa_bird_data %>%
+        filter(common_name == target_species)
       
       # Group the data by month and average the counts
       target_species_month <- target_species_df %>%
@@ -153,7 +152,9 @@ server <- function(input, output, session) {
                           start.p = 1,
                           start.q = 0,
                           start.P = 0,
-                          start.Q = 0)
+                          start.Q = 0,
+                          ic = "aic",
+                          )
       
       # Make predictions
       predictions <- forecast(model, h = length(test_ts))
@@ -161,11 +162,6 @@ server <- function(input, output, session) {
       # Extract the point forecasts from the predictions
       predictions_values <- as.vector(predictions$mean)
       
-      # Convert predictions to a list
-    #  predictions_list <- as.list(predictions_values)
-      
-      # convert R list to values
-   #   predictions_values <- unlist(predictions_list)
       
       ##################    SARIMA EVALUATION    ##################    
       
@@ -284,8 +280,8 @@ server <- function(input, output, session) {
           })
         } else {
           output$map <- renderLeaflet({
-            # Calculate the minimum and maximum observation counts
-            min_count <- min(filtered_map_data$sum_counts, na.rm = TRUE)
+            
+            # Calculate the maximum observation counts
             max_count <- max(filtered_map_data$sum_counts, na.rm = TRUE)
             
             # Define a color palette
@@ -350,7 +346,7 @@ server <- function(input, output, session) {
                 x = ~Month, 
                 y = ~monthly_sum, 
                 type = "bar", 
-                marker = list(color = "purple")) %>%
+                marker = list(color = "#3c8dbc")) %>%
           layout(xaxis = list(title = "Month"), 
                  yaxis = list(title = "Observations"), 
                  title = "Total Number of Observations")
