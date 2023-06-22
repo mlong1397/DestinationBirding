@@ -4,9 +4,9 @@
 
 From the left navigation panel you'll be able to access the interactive maps and time series analysis.
 
-It has been made with [shiny](https://shiny.rstudio.com/) and you may find the code on [github](https://github.com/BSTN-Online-NYC/capstone-repo-mlong1397).
+It has been made with [shiny](https://shiny.rstudio.com/) and you may find the code on [github](https://github.com/mlong1397/DestinationBirding).
 
 For a quick walkthrough have a look a the video below.
 <br><br><br>
-<iframe style = "display: block; margin: auto;" width="640" height="360" src="https://www.youtube.com/embed/rn7Pe4mJHOg"></iframe>
+<iframe style = "display: block; margin: auto;" width="640" height="360" src="https://www.youtube.com/embed/tX0f7JojBi4"></iframe>
 
