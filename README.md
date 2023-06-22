@@ -14,59 +14,35 @@ where the best times and spots are for looking for a specific bird species.
 Please view the app [here](https://mlong1397.shinyapps.io/DestinationBirding/).
 
 I also wrote a report detailing the thought behind the app and give code
-explanations in the DestinationBirdingReport.Rmd and .html files.
+explanations in the DestinationBirdingReport.Rmd and .html files. The rendered
+html file can be viewed above.
 
 ### Walkthrough Demo
 
-... ... ...
-
-### Project Flowchart
-
-... ... ...
+[video link]()
 
 ### Project Organization
 
-... ... ...
-
 - `DestinationBirdingApp`
 
-  - contains a data folder with the pre-processed eBird csv files
-  - the ui.R (front-end) and server.R (back-end) scripts that work together to
-    run the app
+  - contains a `data` folder with the pre-processed eBird csv files
 
-  - a www folder with media (images)
+  - the `ui.R` (front-end) and `server.R` (back-end) scripts that work together
+    to run the R Shiny app.
+
+  - a `www` folder with media (images)
 
 - `data`
 
-  - joblib dump of final model / model object
+  - contains the csv files and the link to google drive files
 
 - `notebooks`
 
-  - contains all final notebooks involved in the project
-
-- `reports`
-
-  - contains final report which summarises the project
-
-- `references`
-
-  - contains papers / tutorials used in the project
-
-- `src`
-
-  - Contains the project source code (refactored from the notebooks)
+  - contains the data exploration phases of my project
 
 - `.gitignore`
 
   - Part of Git, includes files and folders to be ignored by Git version control
-
-- `capstine_env.yml`
-
-  - Conda environment specification
-
-- `Makefile`
-
-  - Automation script for the project
 
 - `README.md`
 
@@ -74,13 +50,5 @@ explanations in the DestinationBirdingReport.Rmd and .html files.
 
 - `LICENSE`
   - Project license
-
-### Dataset
-
-... ... ...
-
-### Credits & References
-
-... ... ...
 
 ---
