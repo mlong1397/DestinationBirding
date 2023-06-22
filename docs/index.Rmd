@@ -76,7 +76,8 @@ My data came from eBird, an online database of bird observations providing resea
 ```{r ebird Knox County, eval = FALSE}
 
 # path to the ebird data file
-f <- "data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
+
+f <- "~/capstone-repo-mlong1397/data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
 f_out <- "ebd_filtered.txt"
 ebd <- auk_ebd(f)
 

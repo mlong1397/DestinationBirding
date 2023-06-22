@@ -62,7 +62,7 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 ```{r ebird Knox County, eval = FALSE}
 # path to the ebird data file
-f2 <- "data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
+f2 <- "./data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
 f_out2 <- "ebd_filtered.txt"
 ebd <- auk_ebd(f2)
 
@@ -986,5 +986,10 @@ when_where_chart <- bird_data %>%
 
 ```{r}
 ## impute data using funk to fill NA observation counts??
+
+ebird_7_reduced %>%
+  group_by(locality)%>%
+  summarise(uniq = unique(locality))
+
 ```
 
