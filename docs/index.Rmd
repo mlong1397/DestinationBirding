@@ -17,6 +17,8 @@ A little bit about me: I have a background in environmental science and several 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_knit$set(root.dir = "~/capstone-repo-mlong1397")
+
 ```
 
 # Libraries and Imports
@@ -30,17 +32,14 @@ library(lubridate) # for dates
 library(leaflet)
 library(ggplot2)
 library(viridis)
-#library(chron)
 library(lattice)
-#library(RColorBrewer)
 library(auk) # for ebird
 library(reticulate) # for python
 library(Metrics)
 library(dbscan)
 library(forecast)
 library(plotly)
-library(zoo) # for yearmon
-#library(rebird) # for eBird API
+library(zoo) # for yearmon object
 
 ```
 
@@ -77,7 +76,7 @@ My data came from eBird, an online database of bird observations providing resea
 
 # path to the ebird data file
 
-f <- "~/capstone-repo-mlong1397/data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
+f <- "data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
 f_out <- "ebd_filtered.txt"
 ebd <- auk_ebd(f)
 
@@ -299,7 +298,7 @@ The next step would be forecasting, but instead I will resume to following the R
 
 ## Predicting Observation Counts for Target Species
 
-The Time Series Analysis tab in *Destination Birding* can be used to predict future observations of species of interest. The tab is interactive and will show the anlysis for the species selected in the dropdown. However, in this report, I will be hard-coding a species for illustration purposes. Initially, I used the python `statsmodels` paackage, but in order to maximize functionality in the R Shiny app, I switch to thr R `stats` package.
+The Time Series Analysis tab in *Destination Birding* can be used to predict future observations of species of interest. The tab is interactive and will show the analysis for the species selected in the dropdown. However, in this report, I will be hard-coding a species for illustration purposes. Initially, I used the python `statsmodels` package, but in order to maximize functionality in the R Shiny app, I switch to the R `stats` package.
 
 I'll start by choosing a bird species and extracting its observations from the daily counts dataframe.
 

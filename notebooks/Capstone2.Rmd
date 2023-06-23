@@ -7,7 +7,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-getwd()
+knitr::opts_knit$set(root.dir = "~/capstone-repo-mlong1397")
+
 ```
 
 ```{r libraries, message = FALSE}
@@ -62,7 +63,8 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 ```{r ebird Knox County, eval = FALSE}
 # path to the ebird data file
-f2 <- "./data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
+setwd("~/capstone-repo-mlong1397")
+f2 <- "data/ebird_7/ebd_US-TN-093_201601_202212_relApr-2023.txt"
 f_out2 <- "ebd_filtered.txt"
 ebd <- auk_ebd(f2)
 
@@ -985,11 +987,58 @@ when_where_chart <- bird_data %>%
 ```
 
 ```{r}
-## impute data using funk to fill NA observation counts??
+```{r funk, eval =FALSE, include=FALSE}
+library(recosystem)
+library(recommenderlab)
+library(Matrix)
+#with funk svd for daily counts
+
+target_species = "American Coot"
+
+# Filter the bird observation data for the target species
+data <- daily_counts %>%
+  filter(common_name == target_species)
+
+
+# Convert the data frame to a sparse matrix
+rating_matrix <- sparseMatrix(
+  i = as.numeric(factor(data$observation_date)),
+  j = as.numeric(factor(data$common_name)),
+  x = data$observation_count,
+  dims = c(max(as.numeric(factor(data$observation_date))), max(as.numeric(factor(data$common_name)))),
+  dimnames = list(unique(data$observation_date), unique(data$common_name))
+)
+# Convert the sparse matrix to a rating matrix
+rating_matrix <- as(rating_matrix, "realRatingMatrix")
+
+# Apply Funk SVD
+funk_svd <- Recommender(rating_matrix, method = "FUNK")
+
+# Predict missing values
+predicted_matrix <- predict(funk_svd, rating_matrix)
+
+# Extract predicted values for missing entries
+missing_indices <- is.na(rating_matrix@data)
+predicted_values <- predicted_matrix@data[missing_indices]
+
+# Replace missing values with predicted values
+rating_matrix@data[missing_indices] <- predicted_values
+
+# Convert the rating matrix back to a data frame
+data_updated <- as(rating_matrix, "matrix")
+```
+
+```{r eda stats}
 
 ebird_7_reduced %>%
   group_by(locality)%>%
   summarise(uniq = unique(locality))
+
+ebird_7_df %>%
+    mutate(observation_count = as.integer(observation_count)) %>%
+  summarise(na_count = sum(is.na(observation_count)))
+
+18044/767997
 
 ```
 
