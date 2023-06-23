@@ -6,7 +6,7 @@
 
 ### Project Overview
 
-This is the repository for the Destination Birding R Shiny App. The project is
+This is the repository for the Destination Birding R Shiny App and markdown report. The project is
 about birding in Knox County, Tennessee. The app has a species diversity map, a
 species-specific time series analysis, and a map & graph that show when and
 where the best times and spots are for looking for a specific bird species.
@@ -19,7 +19,7 @@ or on the github pages tab on the right-hand side of the page.
 
 ### Walkthrough Demo
 
-[video link]()
+[video link](https://www.youtube.com/watch?v=tX0f7JojBi4)
 
 ### Project Organization
 
@@ -34,6 +34,7 @@ or on the github pages tab on the right-hand side of the page.
 
 - `docs`
   - contains the R markdown and html files of the report detailing my process
+
 - `data`
 
   - contains the csv files and the link to google drive files
