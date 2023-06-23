@@ -19,7 +19,7 @@ library(htmltools)
 library(leaflet)
 library(shinydashboard)
 library(shinycssloaders)
-library(DT)
+#library(DT)
 library(collapsibleTree)
 library(shinyWidgets)
 
@@ -222,8 +222,7 @@ shinyUI(fluidPage(
         ),
         
         ### EXTRA ###
-        tabItem(tabName = "releases", includeMarkdown("www/releases.md"))
-        
+        tabItem(tabName = "releases", includeMarkdown("www/releases.Rmd"))
       )
       
     ) # end dashboardBody
