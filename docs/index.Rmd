@@ -596,14 +596,17 @@ The map reacts to both the species input and month input. If either is missing, 
 ```{r where map data}
 # map data
 filtered_map_data <- bird_data %>%
-   filter(common_name == "American Robine") %>%
-          filter(month == "01") %>%
-          group_by(latitude, longitude, locality) %>%
-          summarise(sum_counts = sum(observation_count, na.rm = TRUE)) # sometimes birds are marked only as
-                                                                       # present which gives a count of NA. For
-                                                                       # simplicity I've removed the values,
-                                                                       # however it would be better to predict
-                                                                       # them using Funk SVD or another method.
+   filter(common_name == "American Robin") %>%
+          filter(month == "01")
+```
+
+On the app, the user has the option to cluster the data or not. I will first show an unclustered map.
+
+```{r unclustered}
+filtered_data <- filtered_map_data %>%
+              group_by(latitude, longitude, locality) %>%
+              summarise(total_counts = sum(observation_count, na.rm = TRUE)) # if a bird is marked as heard not
+                                                                             # seen, the count will be NA
 ```
 
 Again, I'll define a color palette, format a tooltip and create the map. This time I also defined a scaling factor so the circle markers aren't too big.
@@ -612,38 +615,150 @@ Again, I'll define a color palette, format a tooltip and create the map. This ti
 # Define a color palette
 pal <- colorNumeric(
               palette = "Blues",
-              domain = filtered_map_data$sum_counts
+              domain = filtered_data$total_counts
             )   
 
 # Calculate the maximum observation counts
-max_count <- max(filtered_map_data$sum_counts, na.rm = TRUE)
+max_count <- max(filtered_data$total_counts, na.rm = TRUE)
 
 # Define the scaling factor for bubble sizes
 scaling_factor <- 10 / max_count
             
 # Prepare the text for tooltips:
 mytext <- paste(
-              "Species: ", "Tennessee Warbler", "<br/>",
-              "Location: ", filtered_map_data$locality,"<br/>", 
-              "Number of Observations: ", filtered_map_data$sum_counts, "<br/>", 
+              "Species: ", "American Robin", "<br/>",
+              "Location: ", filtered_data$locality,"<br/>", 
+              "Number of Observations: ", filtered_data$total_counts, "<br/>", 
               sep="") %>%
           lapply(htmltools::HTML)
 
 # create the map            
-leaflet(filtered_map_data) %>%
+leaflet(filtered_data) %>%
               addTiles() %>%
               addCircleMarkers(
                 lng = ~longitude,
                 lat = ~latitude,
                 weight = 1,
-                fillColor = ~pal(sum_counts),
+                fillColor = ~pal(total_counts),
                 color = "black", 
                 stroke = TRUE,
-                radius = ~sum_counts * scaling_factor,  # Apply the scaling factor
+                radius = ~total_counts * scaling_factor,  # Apply the scaling factor
                 fillOpacity = .7,
                 label = mytext)
 ```
 
+The map is obviously very busy. This is where clustering is useful. It reduces the amount of points, grouping nearby points and removing noise, making it easier to see the most important areas.
+
+Below I walk through clustering using dbscan. First I define ranges for `eps` and `minPts` which are two parameters relating to search distance and minimum number of nearby points to be considered a cluster.
+```{r dbscan search range}
+# filtered data for the map
+filtered_map_data <- bird_data %>%
+    filter(common_name == "American Robin") %>%
+    filter(month == "01") %>%
+    mutate(observation_count = replace_na(observation_count, 1)) # Replace "heard not seen" NaN with 1
+
+# Define the range of eps and minPts values to explore
+eps_range <- seq(0.0001, 0.01, by = 0.0005)
+minPts_range <- seq(2, 30, by = 1)
+            
+# Variables to store the optimal parameters and number of clusters
+optimal_eps <- 0
+optimal_minPts <- 0
+optimal_num_clusters <- Inf  # Initialize with a value outside the desired range
+
+```
+Then `dbscan` loops through all combinations and picks the fewest number of clusters that fall between the numbers 3 and 50.
+
+```{r}
+# Iterate through different parameter combinations
+for (eps in eps_range) {
+  for (minPts in minPts_range) {
+    # Perform DBSCAN clustering
+    dbscan_result <- dbscan(filtered_map_data[, c("longitude", "latitude")], eps = eps, minPts = minPts)
+                
+    # Get the number of clusters
+    num_clusters <- max(dbscan_result$cluster)
+                
+
+    # Update the optimal parameters if a better number of clusters is found within the desired range
+    if (num_clusters >= 3 && num_clusters <= 50) {
+      if (optimal_num_clusters == 0 || (num_clusters < optimal_num_clusters && num_clusters >= 3)) {
+        optimal_eps <- eps
+        optimal_minPts <- minPts
+        optimal_num_clusters <- num_clusters
+                 
+        }
+      }
+    }  
+} 
+
+# Print the number of clusters
+cat("Eps:", optimal_eps, "MinPts:", optimal_minPts, "Num Clusters:", optimal_num_clusters, "\n")
+```
+These are the optimal values determined by the loop. These are then used to run through `dbcasn` one more time and the results are joined back to the original filtered data.
+
+```{r}
+# Perform DBSCAN clustering
+dbscan_result <- dbscan(filtered_map_data[, c("longitude", "latitude")], eps = optimal_eps, minPts = optimal_minPts)
+            
+# Add cluster ID to the original data
+filtered_map_data$cluster_id <- dbscan_result$cluster
+```
+
+Now the clusters are used to group the data to display the clusters on the map.
+```{r}
+# Aggregate data by cluster and common name, excluding cluster_id = 0 which is noise
+clustered_data <- filtered_map_data %>%
+  filter(cluster_id != 0) %>%
+  add_count(cluster_id, locality) %>%
+  group_by(cluster_id) %>%
+  mutate(Majority = locality[n == max(n)][1]) %>%
+  select(-n) %>%
+  summarise(
+    total_counts = sum(observation_count),
+    latitude = mean(latitude),
+    longitude = mean(longitude),
+    locality = Majority
+    ) %>%
+  ungroup()
+
+# Calculate the maximum observation counts
+max_count <- max(clustered_data$total_counts, na.rm = TRUE)
+                
+# Define a color palette
+pal <- colorNumeric(
+  palette = "Blues",
+  domain = clustered_data$total_counts
+  )
+                
+# Define the scaling factor for bubble sizes
+scaling_factor <- 10 / max_count
+                
+# Prepare the text for tooltips
+# Prepare the text for tooltips:
+mytext <- paste(
+              "Species: ", "American Robin", "<br/>",
+              "Location: ", clustered_data$locality,"<br/>", 
+              "Number of Observations: ", clustered_data$total_counts, "<br/>", 
+              sep="") %>%
+          lapply(htmltools::HTML)
+
+# Create the map
+leaflet(clustered_data) %>%
+  addTiles() %>%
+  addCircleMarkers(
+  lng = ~longitude,
+  lat = ~latitude,
+  weight = 1,
+  fillColor = ~pal(total_counts),
+  color = "black",
+  stroke = TRUE,
+  radius = ~total_counts * scaling_factor,
+  fillOpacity = 0.7,
+  label = mytext
+  )
+```
+`dbscan` results in many fewer points, but they're more meaningful. It is much easier to see where someone should prioritize going to find the selected bird.
 
 # Summary
 
