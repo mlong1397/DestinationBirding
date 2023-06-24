@@ -113,6 +113,8 @@ server <- function(input, output, session) {
       target_species_month <- target_species_df %>%
         group_by(month_year) %>%
         summarise(observation_count = mean(observation_count))
+  
+      
       
       # Convert month_year to yearmon object
       target_species_month$month_year <- as.yearmon(target_species_month$month_year, format = "%Y-%m")
@@ -128,13 +130,18 @@ server <- function(input, output, session) {
                observation_count = replace(observation_count, is.na(observation_count), 0)) %>%
         select(-month_year_numeric)
       
+      # Extend the target_species_month dataframe with future months and set observation_count to NA
+      target_species_month <- target_species_month %>%
+        complete(month_year = seq(min(target_species_month$month_year), 
+                                  as.yearmon("2023-12"), by = 1/12),
+                 fill = list(observation_count = NA))
       
       
       ##################    R AUTO ARIMA    ##################    
       
       # Time series data for training and testing
-      train <- target_species_month[target_species_month$month_year < "2021-01-01", "observation_count"]
-      test <- target_species_month[target_species_month$month_year >= "2021-01-01", "observation_count"]
+      train <- target_species_month[target_species_month$month_year < "2022-01-01", "observation_count"]
+      test <- target_species_month[target_species_month$month_year >= "2022-01-01", "observation_count"]
       
       
       # Convert the train and test data to time series objects
@@ -165,32 +172,33 @@ server <- function(input, output, session) {
       # Extract the point forecasts from the predictions
       predictions_values <- as.vector(predictions$mean)
       
-      
-      ##################    SARIMA EVALUATION    ##################    
-      
+      # Set negative predictions to 0
+      predictions_values <- pmax(predictions_values, 0)
+
       # Filter the target_species_month data for train and test sets
-      train_dates <- target_species_month$month_year[target_species_month$month_year < as.yearmon("2021-01")]
-      test_dates <- target_species_month$month_year[target_species_month$month_year >= as.yearmon("2021-01")]
-      
+      train_dates <- target_species_month$month_year[target_species_month$month_year < as.yearmon("2022-01")]
+      test_dates <- target_species_month$month_year[target_species_month$month_year >= as.yearmon("2022-01")]
+
       # Filter the observation counts for train and test sets
-      train_counts <- target_species_month$observation_count[target_species_month$month_year < as.yearmon("2021-01")] 
-      test_counts <- target_species_month$observation_count[target_species_month$month_year >= as.yearmon("2021-01")]
-      
-      
-      # Calculate and output metrics
-      test_mae <- rae(test_counts, predictions_values)
-      test_mape <- mape(test_counts, predictions_values) * 100
-      test_smape <- smape(test_counts, predictions_values)
-      test_sse <- sse(test_counts, predictions_values)
-      test_rmse <- rmse(test_counts, predictions_values)
-      test_mase <- mase(test_counts, predictions_values)
-      
-      
-      output$test_mae <- renderText(paste0("Test MAE:", round(test_mae, 2)))
-      output$test_mape <- renderText(paste0("Test MAPE:", round(test_mape, 2), "%"))
-      output$test_smape <- renderText(paste0("Test SMAPE:", round(test_smape, 2), "%"))
-      output$test_rmse <- renderText(paste0("Test RMSE:", round(test_rmse, 2)))
-      output$test_mase <- renderText(paste0("Test MASE:", round(test_mase, 2)))
+      train_counts <- target_species_month$observation_count[target_species_month$month_year < as.yearmon("2022-01")]
+      test_counts <- target_species_month$observation_count[target_species_month$month_year >= as.yearmon("2022-01")]
+
+      #       ##################    SARIMA EVALUATION    ##################
+
+      # # Calculate and output metrics
+      # test_mae <- rae(test_counts, predictions_values)
+      # test_mape <- mape(test_counts, predictions_values) * 100
+      # test_smape <- smape(test_counts, predictions_values)
+      # test_sse <- sse(test_counts, predictions_values)
+      # test_rmse <- rmse(test_counts, predictions_values)
+      # test_mase <- mase(test_counts, predictions_values)
+      # 
+      # 
+      # output$test_mae <- renderText(paste0("Test MAE:", round(test_mae, 2)))
+      # output$test_mape <- renderText(paste0("Test MAPE:", round(test_mape, 2), "%"))
+      # output$test_smape <- renderText(paste0("Test SMAPE:", round(test_smape, 2), "%"))
+      # output$test_rmse <- renderText(paste0("Test RMSE:", round(test_rmse, 2)))
+      # output$test_mase <- renderText(paste0("Test MASE:", round(test_mase, 2)))
       
       
       ##################    PLOT THE ARIMA    ##################    
