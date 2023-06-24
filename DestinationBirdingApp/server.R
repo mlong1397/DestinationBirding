@@ -4,15 +4,18 @@ library(leaflet)
 library(htmltools)
 library(DescTools)
 library(utils)
+library(cluster)
+library(dbscan)
 
 
 # Load and preprocess your bird observation data
 bird_data <- read.csv("data/ebird_7_reduced.csv")
 bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
-# duplicate to preserve bird_data for the when where bar chart
-map_bird_data <- bird_data
 
+# duplicate to preserve bird_data for the when where bar chart
+map_bird_data <- bird_data %>%
+  mutate(observation_count = replace_na(observation_count, 1))
 server <- function(input, output, session) {
   
   
@@ -251,79 +254,253 @@ server <- function(input, output, session) {
       ################################################################
       ##################    WHEN AND WHERE MAP      ##################    
       ################################################################
-      
-      #############     MAP DATA      ############# 
+
+      #############     MAP DATA      #############
       
       filtered_map_data <- reactive({
-        
-        
         map_bird_data %>%
           filter(common_name == input$species_name) %>%
-          filter(month %in% input$species_month) %>%
-          group_by(latitude, longitude, locality) %>%
-          summarise(sum_counts = sum(observation_count, na.rm = TRUE)) # sometimes birds are marked only as present which gives a count of NA
-        
-        
+          filter(month %in% input$species_month)
       })
       
-
+      #############     CLUSTERING     #############
       
-      #############     MAP OUTPUT      ############# 
-      observe({
-        filtered_map_data <- filtered_map_data()
+      observeEvent(input$perform_clustering, {
+        perform_clustering <- input$perform_clustering
+        filtered_data <- filtered_map_data()
         
-        if (nrow(filtered_map_data) == 0) {
-          output$map <- renderLeaflet({
-            leaflet() %>%
-              addTiles() %>%
-              setView(lng = -83.9207, lat = 35.9606, zoom = 10)  # Set the center and zoom level for Knoxville, TN
-          })
+        if (perform_clustering) {
+          if (nrow(filtered_data) == 0) {
+            # No valid data for clustering
+            cat("No valid data for clustering.\n")
+          } else {
+            
+            # Define the range of eps and minPts values to explore
+            eps_range <- seq(0.0001, 0.01, by = 0.0005)
+            minPts_range <- seq(2, 30, by = 1)
+            
+            # Variables to store the optimal parameters and number of clusters
+            optimal_eps <- 0
+            optimal_minPts <- 0
+            optimal_num_clusters <- Inf  # Initialize with a value outside the desired range
+
+            # Flag variable to track if the notification has been shown
+            notification_shown <- FALSE
+            
+            
+            # Iterate through different parameter combinations
+            for (eps in eps_range) {
+              for (minPts in minPts_range) {
+                # Perform DBSCAN clustering
+                dbscan_result <- dbscan(filtered_data[, c("longitude", "latitude")], eps = eps, minPts = minPts)
+                
+                # Get the number of clusters
+                num_clusters <- max(dbscan_result$cluster)
+                
+                # Print the number of clusters
+                cat("Eps:", eps, "MinPts:", minPts, "Num Clusters:", num_clusters, "\n")
+
+                # Update the optimal parameters if a better number of clusters is found within the desired range
+                if (num_clusters >= 3 && num_clusters <= 50) {
+                  if (optimal_num_clusters == 0 || (num_clusters < optimal_num_clusters && num_clusters >= 3)) {
+                    optimal_eps <- eps
+                    optimal_minPts <- minPts
+                    optimal_num_clusters <- num_clusters
+                 
+                  }
+                }
+              }  
+            }  
+            
+            print(optimal_eps) 
+            print(optimal_minPts)
+            print(optimal_num_clusters)
+            
+            # Check if there are too few points to cluster appropriately
+            if (optimal_num_clusters == 0 || is.infinite(optimal_num_clusters)) {
+              notification_shown <- TRUE
+              showNotification(
+                tags$p(
+                  style = "font-weight:bold; color:red;",
+                  "Too few points to cluster appropriately."
+                )
+              )
+            }
+            
+            # Perform DBSCAN clustering
+            dbscan_result <- dbscan(filtered_data[, c("longitude", "latitude")], eps = optimal_eps, minPts = optimal_minPts)
+            
+            # Add cluster ID to the original data
+            filtered_data$cluster_id <- dbscan_result$cluster
+            
+            # Aggregate data by cluster and common name, excluding cluster_id = 0 which is noise
+            clustered_data <- filtered_data %>%
+              filter(cluster_id != 0) %>%
+              add_count(cluster_id, locality) %>%
+              group_by(cluster_id) %>%
+              mutate(Majority = locality[n == max(n)][1]) %>%
+              select(-n) %>%
+              summarise(
+                total_counts = sum(observation_count),
+                latitude = mean(latitude),
+                longitude = mean(longitude),
+                locality = Majority
+              ) %>%
+              ungroup()
+            
+            # Render the clustered map
+            output$map <- renderLeaflet({
+              if (nrow(clustered_data) == 0) {
+                # No data to display on the map
+                leaflet() %>%
+                  addTiles() %>%
+                  setView(lng = -83.9207, lat = 35.9606, zoom = 10)  # Set the center and zoom level for Knoxville, TN
+              } else {
+                # Calculate the maximum observation counts
+                max_count <- max(clustered_data$total_counts, na.rm = TRUE)
+                
+                # Define a color palette
+                pal <- colorNumeric(
+                  palette = "Blues",
+                  domain = clustered_data$total_counts
+                )
+                
+                # Define the scaling factor for bubble sizes
+                scaling_factor <- 10 / max_count
+                
+                # Prepare the text for tooltips
+                mytext <- paste(
+                  "Species: ", input$species_name, "<br/>",
+                  "Location: ", clustered_data$locality, "<br/>",
+                  "Number of Observations: ", clustered_data$total_counts, "<br/>",
+                  sep = ""
+                ) %>%
+                  lapply(htmltools::HTML)
+                
+                leaflet(clustered_data) %>%
+                  addTiles() %>%
+                  addCircleMarkers(
+                    lng = ~longitude,
+                    lat = ~latitude,
+                    weight = 1,
+                    fillColor = ~pal(total_counts),
+                    color = "black",
+                    stroke = TRUE,
+                    radius = ~total_counts * scaling_factor,
+                    fillOpacity = 0.7,
+                    label = mytext
+                  )
+              }
+            })
+          }
         } else {
+          # Clustering is unchecked, render the non-clustered map
+          
+          # Filter and aggregate data
+          filtered_data <- filtered_map_data() %>%
+            group_by(latitude, longitude, locality) %>%
+            summarise(total_counts = sum(observation_count, na.rm = TRUE))
+          
+          # Render the non-clustered map
           output$map <- renderLeaflet({
-            
-            # Calculate the maximum observation counts
-            max_count <- max(filtered_map_data$sum_counts, na.rm = TRUE)
-            
-            # Define a color palette
-            pal <- colorNumeric(
-              palette = "Blues",
-              domain = filtered_map_data$sum_counts
-            )        
-            
-            # Define the scaling factor for bubble sizes
-            scaling_factor <- 10 / max_count
-            
-            # Prepare the text for tooltips:
-            mytext <- paste(
-              "Species: ", input$species_name, "<br/>",
-              "Location: ", filtered_map_data$locality,"<br/>", 
-              "Number of Observations: ", filtered_map_data$sum_counts, "<br/>", 
-              sep="") %>%
-              lapply(htmltools::HTML)
-            
-            leaflet(filtered_map_data) %>%
-              addTiles() %>%
-              addCircleMarkers(
-                lng = ~longitude,
-                lat = ~latitude,
-                weight = 1,
-                fillColor = ~pal(sum_counts),
-                color = "black", 
-                stroke = TRUE,
-                radius = ~sum_counts * scaling_factor,  # Apply the scaling factor
-                fillOpacity = .7,
-                label = mytext)
-            # ) %>%
-            # addLegend(
-            #   position = "bottomright",
-            #   colors = color_palette(5),  # Adjust the number of colors as desired
-            #   labels = seq(ceiling(min_count), floor(max_count), length.out = 5),  # Adjust the number of labels as desired
-            #   opacity = 0.6,
-            #   title = "Observation Count"
-            # )
+            if (nrow(filtered_data) == 0) {
+              # No data to display on the map
+              leaflet() %>%
+                addTiles() %>%
+                setView(lng = -83.9207, lat = 35.9606, zoom = 10)  # Set the center and zoom level for Knoxville, TN
+            } else {
+              # Calculate the maximum observation counts
+              max_count <- max(filtered_data$total_counts, na.rm = TRUE)
+              
+              # Define a color palette
+              pal <- colorNumeric(
+                palette = "Blues",
+                domain = filtered_data$total_counts
+              )
+              
+              # Define the scaling factor for bubble sizes
+              scaling_factor <- 10 / max_count
+              
+              # Prepare the text for tooltips
+              mytext <- paste(
+                "Species: ", input$species_name, "<br/>",
+                "Location: ", filtered_data$locality, "<br/>",
+                "Number of Observations: ", filtered_data$total_counts, "<br/>",
+                sep = ""
+              ) %>%
+                lapply(htmltools::HTML)
+              
+              leaflet(filtered_data) %>%
+                addTiles() %>%
+                addCircleMarkers(
+                  lng = ~longitude,
+                  lat = ~latitude,
+                  weight = 1,
+                  fillColor = ~pal(total_counts),
+                  color = "black",
+                  stroke = TRUE,
+                  radius = ~total_counts * scaling_factor,
+                  fillOpacity = 0.7,
+                  label = mytext
+                )
+            }
           })
         }
       })
+      
+      # Update the non-clustered map when the month selection changes
+      observeEvent(input$species_month, {
+        if (!input$perform_clustering) {
+          output$map <- renderLeaflet({
+            filtered_data <- filtered_map_data() %>%
+              group_by(latitude, longitude, locality) %>%
+              summarise(total_counts = sum(observation_count, na.rm = TRUE))
+            
+            if (nrow(filtered_data) == 0) {
+              # No data to display on the map
+              leaflet() %>%
+                addTiles() %>%
+                setView(lng = -83.9207, lat = 35.9606, zoom = 10)  # Set the center and zoom level for Knoxville, TN
+            } else {
+              # Calculate the maximum observation counts
+              max_count <- max(filtered_data$total_counts, na.rm = TRUE)
+              
+              # Define a color palette
+              pal <- colorNumeric(
+                palette = "Blues",
+                domain = filtered_data$total_counts
+              )
+              
+              # Define the scaling factor for bubble sizes
+              scaling_factor <- 10 / max_count
+              
+              # Prepare the text for tooltips
+              mytext <- paste(
+                "Species: ", input$species_name, "<br/>",
+                "Location: ", filtered_data$locality, "<br/>",
+                "Number of Observations: ", filtered_data$total_counts, "<br/>",
+                sep = ""
+              ) %>%
+                lapply(htmltools::HTML)
+              
+              leaflet(filtered_data) %>%
+                addTiles() %>%
+                addCircleMarkers(
+                  lng = ~longitude,
+                  lat = ~latitude,
+                  weight = 1,
+                  fillColor = ~pal(total_counts),
+                  color = "black",
+                  stroke = TRUE,
+                  radius = ~total_counts * scaling_factor,
+                  fillOpacity = 0.7,
+                  label = mytext
+                )
+            }
+          })
+        }
+      })
+      
       
       #############     BAR CHART DATA      ############# 
       filtered_bar_data <- reactive({
