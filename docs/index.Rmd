@@ -16,7 +16,7 @@ A little bit about me: I have a background in environmental science and several 
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, out.width = "100%")
 knitr::opts_knit$set(root.dir = "~/capstone-repo-mlong1397")
 
 ```
@@ -87,10 +87,9 @@ knox_birds <- f %>%
   auk_filter(file = f_out, overwrite = TRUE) %>%
   read_ebd()
 
-#write.csv(knox_birds, "data/knox_birds.csv")
 ```
 
-```{r, eval=FALSE}
+```{r, include=FALSE, eval=FALSE}
 #write.csv(knox_birds, "data/knox_birds.csv")
 ```
 
@@ -350,13 +349,24 @@ target_species_month <- target_species_month %>%
   select(-month_year_numeric)
 ```
 
-Now the data is ready to be split into test and training data.
+I then extended the predictions to go past the end of my dataset.
+
+```{r extend pred}
+ # Extend the target_species_month dataframe with future months and set observation_count to NA
+      target_species_month <- target_species_month %>%
+        complete(month_year = seq(min(target_species_month$month_year), 
+                                  as.yearmon("2023-12"), by = 1/12),
+                 fill = list(observation_count = NA))
+```
+
+
+Now the data is ready to be split into test and training data. The model will be trained on the data from 2016 to the end of 2021. The test data is the year of 2022. The predictions will overlap with the test year (2022) and extend for one more year, the length of 2023.
 
 
 ```{r test train split}
 # Time series data for training and testing
-      train <- target_species_month[target_species_month$month_year < "2021-01-01", "observation_count"]
-      test <- target_species_month[target_species_month$month_year >= "2021-01-01", "observation_count"]
+      train <- target_species_month[target_species_month$month_year < "2022-01-01", "observation_count"]
+      test <- target_species_month[target_species_month$month_year >= "2022-01-01", "observation_count"]
 ```
 
 
@@ -395,17 +405,17 @@ model <- auto.arima(train_ts,
 
 ```
 
-The train data (the first 5 years) has been ran through the model. It has predicted values that we will now visually compare to the actual values from the test data.
+The train data (the first 6 years) has been ran through the model. It has predicted values that we will now visually compare to the actual values from the test data.
 
-```{r tsa plot}
+```{r tsa plot, out.width="100%"}
 
 # Filter the target_species_month data for train and test sets
-train_dates <- target_species_month$month_year[target_species_month$month_year < as.yearmon("2021-01")]
-test_dates <- target_species_month$month_year[target_species_month$month_year >= as.yearmon("2021-01")]
+train_dates <- target_species_month$month_year[target_species_month$month_year < as.yearmon("2022-01")]
+test_dates <- target_species_month$month_year[target_species_month$month_year >= as.yearmon("2022-01")]
       
 #Filter the observation counts for train and test sets
-train_counts <- target_species_month$observation_count[target_species_month$month_year < as.yearmon("2021-01")] 
-test_counts <- target_species_month$observation_count[target_species_month$month_year >= as.yearmon("2021-01")]
+train_counts <- target_species_month$observation_count[target_species_month$month_year < as.yearmon("2022-01")] 
+test_counts <- target_species_month$observation_count[target_species_month$month_year >= as.yearmon("2022-01")]
      
 # Round counts for plotly tooltip
 train_counts <- train_counts %>%
@@ -567,7 +577,7 @@ monthly_avg_counts <- filtered_bar_data %>%
                 x = ~Month, 
                 y = ~monthly_sum, 
                 type = "bar", 
-                marker = list(color = "purple")) %>%
+                marker = list(color = "#4B8FA6")) %>%
           layout(xaxis = list(title = "Month"), 
                  yaxis = list(title = "Observations"), 
                  title = "Total Number of Observations")
@@ -577,7 +587,7 @@ monthly_avg_counts <- filtered_bar_data %>%
                 x = ~Month, 
                 y = ~monthly_avg, 
                 type = "bar", 
-                marker = list(color = "purple")) %>%
+                marker = list(color = "#4B8FA6")) %>%
           layout(xaxis = list(title = "Month"), 
                  yaxis = list(title = "Observations"), 
                  title = "Average Number of Observations")
@@ -762,7 +772,7 @@ leaflet(clustered_data) %>%
 
 # Summary
 
-This concludes the walk through of my web app! Please see the actual code for the web app to view how I created interactivity. I hope you're inspired to get in to birding! 
+This concludes the walk through of my web app! Please see the actual code for the web app to view how I created interactivity. I hope you're inspired to go birding! 
 
 
 
