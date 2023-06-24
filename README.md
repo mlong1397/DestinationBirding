@@ -37,7 +37,7 @@ or on the github pages tab on the right-hand side of the page.
 
 - `data`
 
-  - contains the csv files and the link to google drive files
+  - contains the csv files and the link to google drive files. The original data was sourced from eBird.
 
 - `notebooks`
 
