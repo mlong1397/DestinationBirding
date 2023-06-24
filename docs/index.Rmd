@@ -447,49 +447,6 @@ date_train <- as.Date(paste(train_dates, "01"), format = "%b %Y %d")
 
 Upon visual inspection, we can the model did a very good job at predicting the amount of American Coots seen in Knox County in 2021 and 2022!
 
-
-```{r funk, eval =FALSE, include=FALSE}
-library(recosystem)
-library(recommenderlab)
-library(Matrix)
-#with funk svd for daily counts
-
-target_species = "American Coot"
-
-# Filter the bird observation data for the target species
-data <- daily_counts %>%
-  filter(common_name == target_species)
-
-
-# Convert the data frame to a sparse matrix
-rating_matrix <- sparseMatrix(
-  i = as.numeric(factor(data$observation_date)),
-  j = as.numeric(factor(data$common_name)),
-  x = data$observation_count,
-  dims = c(max(as.numeric(factor(data$observation_date))), max(as.numeric(factor(data$common_name)))),
-  dimnames = list(unique(data$observation_date), unique(data$common_name))
-)
-# Convert the sparse matrix to a rating matrix
-rating_matrix <- as(rating_matrix, "realRatingMatrix")
-
-# Apply Funk SVD
-funk_svd <- Recommender(rating_matrix, method = "FUNK")
-
-# Predict missing values
-predicted_matrix <- predict(funk_svd, rating_matrix)
-
-# Extract predicted values for missing entries
-missing_indices <- is.na(rating_matrix@data)
-predicted_values <- predicted_matrix@data[missing_indices]
-
-# Replace missing values with predicted values
-rating_matrix@data[missing_indices] <- predicted_values
-
-# Convert the rating matrix back to a data frame
-data_updated <- as(rating_matrix, "matrix")
-
-```
-
 # Point Clustering to show Monthly Species Diversity
 
 The Species Diversity Map tab let's you view species diversity for any given month.Perhaps you've never visited Knoxville or the East Coast and so while you're here, you want to go to spots to get the most number of bird species to add to you life list. This map can help!
@@ -633,14 +590,14 @@ As a birder myself, this is something I could have told you from knowing about t
 
 Next, I'll walk through the map part of the web app. 
 
-The map reacts to both the species input and month input. If either is missing, it is blank. I'll use the Tennessee Warbler and October as an example.
+The map reacts to both the species input and month input. If either is missing, it is blank. I also added an optional "Perform Clustering" checkbox. If a species is observed frequently in many places, there can be a lot of small points all over the map, resulting in a lot of noise. Using a clustering algorithm, like in the species diversity map, it groups nearby points. However, this time I used dbscan since it does not require the number of clusters to be pre-defined. I'll use the American Robin in January, both clustered and not clustered, as an example.
 
 
 ```{r where map data}
 # map data
 filtered_map_data <- bird_data %>%
-   filter(common_name == "Tennessee Warbler") %>%
-          filter(month == "10") %>%
+   filter(common_name == "American Robine") %>%
+          filter(month == "01") %>%
           group_by(latitude, longitude, locality) %>%
           summarise(sum_counts = sum(observation_count, na.rm = TRUE)) # sometimes birds are marked only as
                                                                        # present which gives a count of NA. For
