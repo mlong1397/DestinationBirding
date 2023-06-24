@@ -23,6 +23,7 @@ library(shinycssloaders)
 library(collapsibleTree)
 library(shinyWidgets)
 library(dbscan)
+library(shinyjs)
 
 # data for species diveristy map
 bird_data <- read.csv("data/ebird_7_reduced.csv")
@@ -92,6 +93,7 @@ shinyUI(fluidPage(
           padding: 10px;
           text-align: center;
         }
+
     ")
     )
   ),
@@ -108,14 +110,14 @@ shinyUI(fluidPage(
     
     dashboardSidebar(width = 300,
                      sidebarMenu(
-                       
-                       tags$img(src = "bird-logo-w.png", class = "sidebar-logo")
-                       ,
+                       id = "tabs",
+                       tags$img(src = "bird-logo-w.png", class = "sidebar-logo"),
                        menuItem("Home", tabName = "home", icon = icon("home")),
                        menuItem("Species Diversity Map", tabName = "diversity_map", icon = icon("map")),
-                       menuItem("Time Series Analysis", tabName = "target_tsa", icon = icon("chart-line")),
+                       menuItem(text = "Time Series Analysis", tabName = "target_tsa", icon = icon("chart-line")),
                        menuItem("When and Where to Bird", tabName = "target_map", icon = icon("map-location")),
                        menuItem("Releases", tabName = "releases", icon = icon("tasks")),
+                       uiOutput("sel_bird_image"),
                        HTML("<div class='sidebar-information'>Information and Contact</div>"),
                        HTML(paste0(
                          "<div class='sidebar-links'>",
@@ -133,7 +135,7 @@ shinyUI(fluidPage(
                        )),
                        HTML("<div class='sidebar-footer'><small>&copy; Marilyn Long - 2023</small></div>")
                      )
-    ), # end dashboardSidebar
+          ), # end dashboardSidebar
 
 
     
@@ -141,7 +143,6 @@ shinyUI(fluidPage(
     ######################     BODY     ###################### 
     ##########################################################
     dashboardBody(
-      
       tabItems(
         
         #########   HOME   ######### 
@@ -192,8 +193,8 @@ shinyUI(fluidPage(
             column(
               width = 12,
               h4("Instructions"),
-              p("Select a bird species from the dropdown menu. The graph displays a Time Series Analysis 
-      for the selected bird, using past observations to predict future observations. The graph 
+              p("Select a bird species from the dropdown menu. The graph displays a Time Series Analysis
+      for the selected bird, using past observations to predict future observations. The graph
       includes three lines:"),
               p(
                 "• Actual (Train): Observed data used for training",
@@ -202,15 +203,15 @@ shinyUI(fluidPage(
                 br(),
                 "• Predicted: Projection into 2023 based on the model"
               ),
-              p("Compare the Actual (Test) line with the Predicted line to assess the model's performance 
-      and the reliability of the 2023 predictions. If they closely align, it indicates a well-performing 
-      model for the selected species, increasing confidence in the projections. However, if there's 
+              p("Compare the Actual (Test) line with the Predicted line to assess the model's performance
+      and the reliability of the 2023 predictions. If they closely align, it indicates a well-performing
+      model for the selected species, increasing confidence in the projections. However, if there's
       a significant deviation, exercise caution when interpreting the 2023 predictions.")
             )
           ),
           fluidRow(
             title = "Species Selection",
-            column(3, selectInput("species", "Select Bird Species", 
+            column(3, selectInput("species", "Select Bird Species",
                                   choices = unique(tsa_bird_data$common_name)),
                    style="z-index:1002;")
           ),
@@ -218,6 +219,7 @@ shinyUI(fluidPage(
             column(12, plotlyOutput("time_series_plot_R") %>% withSpinner(color = "blue"))
           )
         ),
+      
         #################################################
         #########         WHEN WHERE MAP        ######### 
         #################################################
@@ -288,9 +290,9 @@ shinyUI(fluidPage(
         #########           RELEASES            ######### 
         #################################################
         tabItem(tabName = "releases", includeMarkdown("www/releases.Rmd"))
-      )
+      ) # end of tabItems
       
     ) # end dashboardBody
     
   )# end dashboardPage
-  ))  
+))  
