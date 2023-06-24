@@ -222,21 +222,7 @@ server <- function(input, output, session) {
       
       # Render the plotly plot
       output$time_series_plot_R <- renderPlotly(time_series_plot)
-      
-      ##################    BIRD PHOTOS    ##################    
-      
-      # Render the bird image from a local file
-      output$bird_image <- renderImage({
-        target_species <- input$species
-        file_name <- gsub(" ", "_", target_species)
-        file_path <- file.path("bird_images/", paste0(file_name, ".jpeg"))
-        
-        list(src = file_path,
-             width = "100%",
-             height = "auto")
-        
-        
-      }, deleteFile = F)
+    
       
       
       ################################################################
@@ -515,6 +501,68 @@ server <- function(input, output, session) {
           layout(xaxis = list(title = "Month"), 
                  yaxis = list(title = "Observations"), 
                  title = "Total Number of Observations")
+      })
+      
+      ################################################################
+      ##################        BIRD PHOTOS         ##################    
+      ################################################################
+
+      
+      ##################    TSA BIRD PHOTOS    ##################
+      
+      observeEvent(input$tabs, {
+        if (input$tabs == "target_tsa") {
+          target_species <- input$species
+          
+          file_name <- gsub(" ", "_", target_species)
+          file_path <- file.path("www/bird_images/", paste0(file_name, ".jpeg"))
+          
+          output$bird_image <- renderImage({
+            list(src = file_path,
+                 width = "100%",
+                 height = "auto")
+          }, deleteFile = FALSE)
+        } else if (input$tabs == "target_map") {
+          target_species <- input$species_name
+          
+          file_name <- gsub(" ", "_", target_species)
+          file_path <- file.path("www/bird_images/", paste0(file_name, ".jpeg"))
+          
+          output$bird_image_ww <- renderImage({
+            list(src = file_path,
+                 width = "100%",
+                 height = "auto")
+          }, deleteFile = FALSE)
+        }
+      })
+      
+      ##################    WHEN WHERE BIRD PHOTOS    ##################
+      
+      observeEvent(input$species_name, {
+        if (input$tabs == "target_map") {
+          target_species <- input$species_name
+          
+          file_name <- gsub(" ", "_", target_species)
+          file_path <- file.path("www/bird_images/", paste0(file_name, ".jpeg"))
+          
+          output$bird_image_ww <- renderImage({
+            list(src = file_path,
+                 width = "100%",
+                 height = "auto")
+          }, deleteFile = FALSE)
+        }
+      })
+      
+      ##################    SELECTED BIRD PHOTO    ##################
+      
+      output$sel_bird_image <- renderUI({
+        if (input$tabs == "target_tsa") {
+          imageOutput("bird_image")
+        } else if (input$tabs == "target_map") {
+          imageOutput("bird_image_ww")
+        } else {
+          NULL
+        }
       })
       
       
