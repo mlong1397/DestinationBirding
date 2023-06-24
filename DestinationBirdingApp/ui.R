@@ -67,6 +67,31 @@ shinyUI(fluidPage(
       width: 100%;
       height: auto;
       }
+      .sidebar-footer {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          text-align: center;
+          padding: 10px;
+      }
+      .sidebar-information {
+        font-size: 14px;
+        font-weight: bold;
+        text-align: center;
+        padding-top: 10px;
+        position: absolute;
+        bottom: 80px;
+        width: 100%;
+      }
+        .sidebar-links {
+          position: absolute;
+          bottom: 30px;
+          left: 0;
+          width: 100%;
+          padding: 10px;
+          text-align: center;
+        }
     ")
     )
   ),
@@ -91,28 +116,27 @@ shinyUI(fluidPage(
                        menuItem("Time Series Analysis", tabName = "target_tsa", icon = icon("chart-line")),
                        menuItem("When and Where to Bird", tabName = "target_map", icon = icon("map-location")),
                        menuItem("Releases", tabName = "releases", icon = icon("tasks")),
+                       HTML("<div class='sidebar-information'>Information and Contact</div>"),
                        HTML(paste0(
-                         "<br><br><br><br><br><br><br><br><br>",
+                         "<div class='sidebar-links'>",
                          "<table style='margin-left:auto; margin-right:auto;'>",
                          "<tr>",
-                         "<td style='padding: 5px;'><a href='https://ebird.org/home' target='_blank'><img src='ebird-png.webp'style='width: 30px; height: auto;'></a></td>",
-                         "<td style='padding: 5px;'><a href='https://merlin.allaboutbirds.org/' target='_blank'><img src='merlin.png'style='width: 24px; height: auto;'></a></td>",
-                         "<td style='padding: 5px;'><a href='https://tnstateparks.com/parks/seven-islands' target='_blank'><img src='tnsp.png'style='width: 24px; height: auto;'></a></td>",
-                         "<td style='padding: 5px;'><a href='https://www.ijams.org/' target='_blank'><img src='ijams.png'style='width: 24px; height: auto;'></a></td>",
-                         "<td style='padding: 5px;'><a href='hhttps://www.linkedin.com/in/marilyn-long/ target='_blank'><img src='linkedin.png'style='width: 24px; height: auto;'></a></td>",
+                         "<td style='padding: 5px;'><a href='https://ebird.org/home' target='_blank'><img src='ebird-png.webp' style='width: 30px; height: auto;'></a></td>",
+                         "<td style='padding: 5px;'><a href='https://merlin.allaboutbirds.org/' target='_blank'><img src='merlin.png' style='width: 24px; height: auto;'></a></td>",
+                         "<td style='padding: 5px;'><a href='https://tnstateparks.com/parks/seven-islands' target='_blank'><img src='tnsp.png' style='width: 24px; height: auto;'></a></td>",
+                         "<td style='padding: 5px;'><a href='https://www.ijams.org/' target='_blank'><img src='ijams.png' style='width: 24px; height: auto;'></a></td>",
+                         "<td style='padding: 5px;'><a href='https://www.linkedin.com/in/marilyn-long/' target='_blank'><img src='linkedin.png' style='width: 24px; height: auto;'></a></td>",
                          "</tr>",
                          "</table>",
-                         "<br>"),
-                         HTML(paste0(
-                           "<script>",
-                           "var today = new Date();",
-                           "var yyyy = today.getFullYear();",
-                           "</script>",
-                           "<p style = 'text-align: center;'><small>&copy; Marilyn Long</a> - <script>document.write(yyyy);</script></small></p>")
-                         ))
+                         "</div>",
+                         "<br>"
+                       )),
+                       HTML("<div class='sidebar-footer'><small>&copy; Marilyn Long - 2023</small></div>")
                      )
-                     
     ), # end dashboardSidebar
+
+
+    
     ##########################################################
     ######################     BODY     ###################### 
     ##########################################################
