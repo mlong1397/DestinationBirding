@@ -22,6 +22,7 @@ library(shinycssloaders)
 #library(DT)
 library(collapsibleTree)
 library(shinyWidgets)
+library(dbscan)
 
 # data for species diveristy map
 bird_data <- read.csv("data/ebird_7_reduced.csv")
@@ -29,7 +30,8 @@ bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
 
 # duplicate to preserve bird_data for the when where bar chart and map
-map_bird_data <- bird_data
+map_bird_data <- bird_data %>%
+  mutate(observation_count = replace_na(observation_count, 1))
 
 # data for TSA
 tsa_bird_data <- read.csv("data/grouped_month.csv")
@@ -175,7 +177,7 @@ shinyUI(fluidPage(
             title = "Species Selection",
             column(3, selectInput("species", "Select Bird Species", 
                                   choices = unique(tsa_bird_data$common_name)),
-                   style="z-index:1002;"),
+                   style="z-index:1002;")
           ),
           fluidRow(
             column(12, plotlyOutput("time_series_plot_R") %>% withSpinner(color = "blue"))
@@ -191,26 +193,51 @@ shinyUI(fluidPage(
             column(
               width = 12,
               h4("Instructions"),
-              p("Use the dropdown menu to select a bird species and at least one month. 
-                The map will show where the species is present during the selected month(s). 
-                The graph shows how frequently the species is seen throughout the year. Please note that
-                if a month is not present in the graph, it means that no observations of that species was made for that month.
-                The same goes for the map.")
+              p("To explore bird species distribution, select a species from the dropdown 
+                menu and choose at least one month. The map will showcase the areas where 
+                the selected species is observed during the specified month(s). 
+                Additionally, the accompanying graph displays the frequency of species 
+                sightings throughout the year. Please note that if a month is absent 
+                from the graph, it indicates a lack of observations for that specific 
+                month, so if you choose that month the map will be empty."),
+              
+              p("Clustering is a technique employed to identify and group 
+                similar data points based on their shared characteristics. In this 
+                application, you may choose whether or not you want to view glustered, or 
+                grouped, points. 
+                However, please keep in mind that clustering requires a sufficient number of 
+                data points to provide meaningful results. If there are too few data points 
+                available for the selected species and month combination, you will get a 
+                warning message. Please consider selecting different species or 
+                months with more available data for clustering analysis."),
+              
+              p("If there are a large number of data points, the clustering process 
+                may take a minute or two to complete. Please be patient during this 
+                process and allow the application some time to generate the clusters 
+                on the map.")
             )
           ),
+
           fluidRow(
-            title = "Species Selection",
-            column(5, selectInput("species_name", "Select Bird Species", 
-                                  choices = unique(bird_data$common_name)),
-                   style="z-index:1003;")
+            column(
+              width = 4,
+              title = "Species Selection",
+              selectInput("species_name", "Select Bird Species", 
+                          choices = unique(bird_data$common_name))
             ),
-          fluidRow(
-            title = "Month Selection",
-            column(5, pickerInput("species_month", "Select Month", 
-                                  choices = unique(bird_data$month), 
-                                  options = list(`actions-box` = TRUE),multiple = T),
-                   style="z-index:1002;")
-          ),
+            column(
+              width = 4,
+              title = "Month Selection",
+              pickerInput("species_month", "Select Month", 
+                          choices = unique(bird_data$month), 
+                          options = list(`actions-box` = TRUE), multiple = TRUE)
+            ),
+            column(
+              width = 4,
+              title = "Clustering",
+              checkboxInput("perform_clustering", "Perform Clustering", value = FALSE)
+            ),
+
           fluidRow(
             column(12, leafletOutput("map") %>% withSpinner(color = "blue"),
                    style = "margin-top: 20px")
@@ -219,9 +246,12 @@ shinyUI(fluidPage(
             column(12, plotlyOutput("bar_chart") %>% withSpinner(color = "blue"),
                    style = "margin-top: 20px")
           )
+          )
         ),
         
-        ### EXTRA ###
+        #################################################
+        #########           RELEASES            ######### 
+        #################################################
         tabItem(tabName = "releases", includeMarkdown("www/releases.Rmd"))
       )
       
