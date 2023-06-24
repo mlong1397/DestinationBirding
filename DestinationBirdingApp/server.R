@@ -113,8 +113,6 @@ server <- function(input, output, session) {
       target_species_month <- target_species_df %>%
         group_by(month_year) %>%
         summarise(observation_count = mean(observation_count))
-  
-      
       
       # Convert month_year to yearmon object
       target_species_month$month_year <- as.yearmon(target_species_month$month_year, format = "%Y-%m")
@@ -182,24 +180,6 @@ server <- function(input, output, session) {
       # Filter the observation counts for train and test sets
       train_counts <- target_species_month$observation_count[target_species_month$month_year < as.yearmon("2022-01")]
       test_counts <- target_species_month$observation_count[target_species_month$month_year >= as.yearmon("2022-01")]
-
-      #       ##################    SARIMA EVALUATION    ##################
-
-      # # Calculate and output metrics
-      # test_mae <- rae(test_counts, predictions_values)
-      # test_mape <- mape(test_counts, predictions_values) * 100
-      # test_smape <- smape(test_counts, predictions_values)
-      # test_sse <- sse(test_counts, predictions_values)
-      # test_rmse <- rmse(test_counts, predictions_values)
-      # test_mase <- mase(test_counts, predictions_values)
-      # 
-      # 
-      # output$test_mae <- renderText(paste0("Test MAE:", round(test_mae, 2)))
-      # output$test_mape <- renderText(paste0("Test MAPE:", round(test_mape, 2), "%"))
-      # output$test_smape <- renderText(paste0("Test SMAPE:", round(test_smape, 2), "%"))
-      # output$test_rmse <- renderText(paste0("Test RMSE:", round(test_rmse, 2)))
-      # output$test_mase <- renderText(paste0("Test MASE:", round(test_mase, 2)))
-      
       
       ##################    PLOT THE ARIMA    ##################    
       
@@ -217,7 +197,7 @@ server <- function(input, output, session) {
       date_train <- as.Date(paste(train_dates, "01"), format = "%b %Y %d")  
       
       
-      
+      # Create the plot
       time_series_plot <- plot_ly() %>%
         add_lines(data = data.frame(x = date_train, y = train_counts),
                   x = ~x, y = ~y, color = I("#C7C7C7"),
