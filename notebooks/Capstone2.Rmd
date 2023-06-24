@@ -30,6 +30,7 @@ library(auk) # for ebird
 library(reticulate) # for python
 library(Metrics)
 library(dbscan)
+library(cluster)
 #library(osmdata)
 #library(rebird) # for eBird API
 
@@ -708,6 +709,67 @@ leaflet(md_agg_data) %>%
 
 ```
 
+```{r when where kmeans cluster}
+# Get user input for the month
+input_month <- "01"   # Example: June
+input_species <- "American Black Duck"              
+
+# Filter data by month
+map_bird_data <- ebird_7_reduced %>%
+  mutate(month = format(as.Date(observation_date), "%m")) %>%
+  #filter(month(observation_date) == input_month) 
+  filter(month == input_month) %>%
+  filter(common_name == input_species)
+
+str(select_bird_data)
+
+# Perform clustering
+clusters <- kmeans(select_bird_data[, c("latitude", "longitude")], centers = 40)
+
+# Add cluster labels to the filtered dataframe
+select_bird_data$cluster <- clusters$cluster
+
+# Aggregate data by cluster and common name
+moded_agg_data <- select_bird_data %>%
+  
+  # add a column n with counts of the locality names at each cluster (most frequent name)
+  add_count(cluster, locality) %>%
+  
+  group_by(cluster) %>%
+  
+  # only keep the most frequent locality name per cluster
+  mutate(Majority = locality[n == max(n)][1]) %>%
+  
+  # do not keep temp var
+  select(-n) %>%
+  
+  
+  summarize(distinct_common_names = n_distinct(common_name), # number of distinct species per  cluster
+            latitude = mean(latitude),
+            longitude = mean(longitude),
+            locality = Majority) %>%
+  ungroup()
+
+    # Prepare the text for tooltips:
+    mytext <- paste(
+      "Location: ", md_agg_data$locality,"<br/>", 
+      "Number of Species: ", md_agg_data$distinct_common_names, "<br/>", 
+      sep="") %>%
+      lapply(htmltools::HTML)
+
+# Create proportional symbol map
+leaflet(md_agg_data) %>%
+  addTiles() %>%
+  setView(lng = mean(select_bird_data$longitude), lat = mean(select_bird_data$latitude), zoom = 10) %>%
+  addCircleMarkers(
+    lng = ~longitude, lat = ~latitude,
+    weight = 1, color = "black",
+    radius = ~distinct_common_names / 10,  # Adjust the size of the circles based on count
+    fillOpacity = 0.7,
+    label = mytext,
+    #labelOptions = labelOptions(noHide = TRUE, textOnly = TRUE)
+  )
+```
 
 
 ```{r cleaning up locality}
@@ -799,7 +861,7 @@ tm_shape(grouped_averages_sf)+
 
 ```
 
-```{r diversity map}
+```{r when where map}
 
 
 # remove birds that are seen frequently. If you're purposefully trying to find a species, it's not going to be a common one (like a robin, chickadee etc)
@@ -817,11 +879,11 @@ bird_data$month <- format(bird_data$observation_date, "%m")
 
 bd <- bird_data %>%
       filter(common_name == "Yellow-rumped Warbler") %>%
-      filter(month == "09") %>%
+      filter(month == "09") 
     # mutate(rounded_lat = round(latitude,3)) %>%
   #  mutate(rounded_lon = round(longitude,3)) %>%
-     group_by(latitude, longitude) %>%
-     summarise(sum_counts = sum(observation_count))
+# group_by(latitude, longitude) %>%
+  #   summarise(sum_counts = sum(observation_count))
 
 
 # Prepare the text for tooltips:
@@ -862,33 +924,64 @@ leaflet(bd) %>%
   )
 ```
 
+```{r eps distance}
+# Define the latitude and longitude coordinates for Knoxville, TN
+knoxville_coords <- c(35.94, -83.68)  # Latitude, Longitude of Knoxville, TN
+
+# Define the epsilon value in kilometers
+eps_km <- 0.01
+
+# Convert the epsilon value to degrees
+eps_deg <- eps_km / 111.32
+
+# Calculate the distance covered by the epsilon value using the Haversine formula
+eps_distance <- 2 * pi * 6371 * sin(eps_deg / 2)
+
+# Print the distance covered by the epsilon value
+cat("Distance covered by an epsilon of 0.001 in Knoxville, TN:", eps_distance, "kilometers\n")
+
+```
+
 
 ```{r dbscan leaflet}
+nonull <- bird_data %>%
+  mutate(observation_count = replace_na(observation_count, 1))
+bd <- nonull %>%
+      filter(common_name == "American Black Duck") %>%
+      filter(month == "01") 
 
 # Define the range of eps and minPts values to explore
-eps_range <- seq(0.001, 0.1, by = 0.005)
+eps_range <- seq(0.0001, 0.01, by = 0.0005)
 
-minPts_range <- seq(5, 40, by = 5)
+minPts_range <- seq(2, 30, by = 1)
 
 # Variables to store the optimal parameters and number of clusters
 optimal_eps <- 0
 optimal_minPts <- 0
-optimal_num_clusters <- 0
+optimal_num_clusters <- Inf  # Initialize with a value outside the desired range
+optimal_silhouette <- -1
 
+# Iterate through different parameter combinations
 # Iterate through different parameter combinations
 for (eps in eps_range) {
   for (minPts in minPts_range) {
     # Perform DBSCAN clustering
     dbscan_result <- dbscan(bd[, c("longitude", "latitude")], eps = eps, minPts = minPts)
-    
+
     # Get the number of clusters
-    num_clusters <- max(dbscan_result$cluster)
+    num_clusters <- length(unique(dbscan_result$cluster)) - 1  # Subtract 1 to exclude the noise cluster (0)
+
     
-    # Update the optimal parameters if a better number of clusters is found within the desired range
-    if (num_clusters >= 5 && num_clusters <= 40 && num_clusters < optimal_num_clusters) {
-      optimal_eps <- eps
-      optimal_minPts <- minPts
-      optimal_num_clusters <- num_clusters
+    # Update the optimal parameters if a higher silhouette score is found within the desired range
+    if (num_clusters >= 3 && num_clusters <= 40) {
+      if (avg_silhouette > optimal_silhouette) {
+        optimal_eps <- eps
+        optimal_minPts <- minPts
+        optimal_num_clusters <- num_clusters
+        optimal_silhouette <- avg_silhouette
+      }
+    } else {
+      cat("Too few points to cluster appropriately.\n")
     }
   }
 }
@@ -897,20 +990,67 @@ for (eps in eps_range) {
 cat("Optimal eps:", optimal_eps, "\n")
 cat("Optimal minPts:", optimal_minPts, "\n")
 cat("Optimal number of clusters:", optimal_num_clusters, "\n")
+
 # Run DBSCAN clustering
 
-dbscan_result <- dbscan(bd[, c("longitude", "latitude")], eps = optimal_eps, minPts = optimal_minPts)
+dbscan_result <- dbscan(bd[, c("longitude", "latitude")], eps = optimal_eps, MinPts = optimal_minPts)
 
 # Add cluster ID to the original data
 bd$cluster_id <- dbscan_result$cluster
 
-# Aggregate the unique number of common_name by cluster
-cluster_summary <- bd %>%
-  group_by(cluster_id) %>%
-  summarise(sum_counts = sum(observation_count))
 
-# Merge cluster summary with original data
-bd <- merge(bd, cluster_summary, by = "cluster_id")
+
+# Aggregate data by cluster and common name
+      agg_data <- bd %>%
+        filter(cluster_id != 0) %>%  # Exclude cluster_id = 0 because that represents noise
+        add_count(cluster_id, locality) %>%
+        group_by(cluster_id) %>%
+        mutate(Majority = locality[n == max(n)][1]) %>%
+        select(-n) %>%
+        summarise(
+          total_counts = sum(observation_count),
+          latitude = mean(latitude),
+          longitude = mean(longitude),
+          locality = Majority) %>%
+        ungroup()
+
+# Prepare the text for tooltips:
+  mytext <- paste(
+  "Location: ", agg_data$locality,"<br/>", 
+  "Number of Observations: ", agg_data$total_counts, "<br/>", 
+    sep="") %>%
+    lapply(htmltools::HTML)
+  
+
+        
+# Define a color palette for the bubbles
+color_gradient <- colorRampPalette(c("#EFEFFF", "#4B0082"))  # Light blue to indigo
+   
+pal <- colorNumeric(
+        palette = "Blues",
+        domain = agg_data$total_counts
+        
+      )
+        
+# Define the scaling factor for bubble sizes
+max_count <- max(agg_data$total_counts, na.rm = TRUE)
+scaling_factor <- 10 / max_count
+        
+leaflet(agg_data) %>%
+  addTiles() %>%
+  setView(lng = mean(agg_data$longitude), lat = mean(agg_data$latitude), zoom = 10) %>%
+  addCircleMarkers(
+    lng = ~longitude, 
+    lat = ~latitude,
+    weight = 1, 
+    color = "black",
+    fillColor = ~pal(total_counts),
+    radius = ~total_counts * scaling_factor ,  # Adjust the size of the circles based on count
+    fillOpacity = 0.7,
+    stroke = TRUE,
+   label = mytext
+    #labelOptions = labelOptions(noHide = TRUE, textOnly = TRUE)
+  )
 
 ```
 
@@ -986,7 +1126,7 @@ when_where_chart <- bird_data %>%
 
 ```
 
-```{r}
+
 ```{r funk, eval =FALSE, include=FALSE}
 library(recosystem)
 library(recommenderlab)
@@ -1041,4 +1181,5 @@ ebird_7_df %>%
 18044/767997
 
 ```
+
 
