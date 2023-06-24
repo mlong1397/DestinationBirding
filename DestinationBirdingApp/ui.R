@@ -168,9 +168,20 @@ shinyUI(fluidPage(
             column(
               width = 12,
               h4("Instructions"),
-              p("Use the dropdown menu to select a bird species. The graph will show a 
-                Time Series Analysis for the selected bird. A time series analysis uses past 
-                observations to predict future observations.")
+              p("Select a bird species from the dropdown menu. The graph displays a Time Series Analysis 
+      for the selected bird, using past observations to predict future observations. The graph 
+      includes three lines:"),
+              p(
+                "• Actual (Train): Observed data used for training",
+                br(),
+                "• Actual (Test): Observed data for the test period",
+                br(),
+                "• Predicted: Projection into 2023 based on the model"
+              ),
+              p("Compare the Actual (Test) line with the Predicted line to assess the model's performance 
+      and the reliability of the 2023 predictions. If they closely align, it indicates a well-performing 
+      model for the selected species, increasing confidence in the projections. However, if there's 
+      a significant deviation, exercise caution when interpreting the 2023 predictions.")
             )
           ),
           fluidRow(
