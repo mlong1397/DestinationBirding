@@ -30,6 +30,11 @@ bird_data <- read.csv("data/ebird_7_reduced.csv")
 bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
 
+# remove unrealistic species (do not naturally occur in Knoxville)
+bird_data <- bird_data %>%
+  filter(!common_name %in% c("Mandarin Duck", "Black-headed Parrot", "Indian Peafowl", 
+                             "Helmeted Guineafowl", "Nanday Parakeet", "Ring-necked Pheasant"))
+
 # duplicate to preserve bird_data for the when where bar chart and map
 map_bird_data <- bird_data %>%
   mutate(observation_count = replace_na(observation_count, 1))
