@@ -181,6 +181,9 @@ server <- function(input, output, session) {
       
       # Set negative predictions to 0
       predictions_values <- pmax(predictions_values, 0)
+      
+      # View model summary
+      output$modelSummary <- renderPrint(print(summary(model)))
 
       # Filter the target_species_month data for train and test sets
       train_dates <- target_species_month$month_year[target_species_month$month_year < as.yearmon("2022-01")]

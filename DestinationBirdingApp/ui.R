@@ -214,7 +214,9 @@ shinyUI(fluidPage(
               p("Compare the Actual (Test) line with the Predicted line to assess the model's performance
       and the reliability of the 2023 predictions. If they closely align, it indicates a well-performing
       model for the selected species, increasing confidence in the projections. However, if there's
-      a significant deviation, exercise caution when interpreting the 2023 predictions.")
+      a significant deviation, exercise caution when interpreting the 2023 predictions."),
+              p("Below the graph are an expandable model summary and explanation for those that are interested in 
+                the math and the model's parameter selection process.")
             )
           ),
           fluidRow(
@@ -225,8 +227,29 @@ shinyUI(fluidPage(
           ),
           fluidRow(
             column(12, plotlyOutput("time_series_plot_R") %>% withSpinner(color = "blue"))
+          ),
+          fluidRow(
+            tags$div(style = "margin-bottom: 20px;")  # Add a margin-bottom to create a gap
+          ),
+          fluidRow(
+            box(
+              title = "Model Summary",
+              collapsible = TRUE,
+              collapsed = TRUE,
+              width = 12,
+              verbatimTextOutput("modelSummary")
+            )
+          ),
+          fluidRow(
+          box(
+            title = "Explanation",
+            collapsible = TRUE,
+            collapsed = TRUE,
+            width = 12,
+            includeMarkdown("www/modelExplanation.md")
           )
-        ),
+        )
+      ),
       
         #################################################
         #########         WHEN WHERE MAP        ######### 
