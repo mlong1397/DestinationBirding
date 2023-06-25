@@ -9,7 +9,9 @@ library(dbscan)
 
 
 # Load and preprocess your bird observation data
-bird_data <- read.csv("data/ebird_7_reduced.csv")
+#bird_data <- read.csv("data/ebird_7_reduced.csv")
+bird_data <- read.csv("data/knox_birds_reduced.csv")
+
 bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
 
@@ -100,7 +102,8 @@ server <- function(input, output, session) {
   ################################################################
   
   # Load and preprocess your bird observation data
-  tsa_bird_data <- read.csv("data/grouped_month.csv")
+  #tsa_bird_data <- read.csv("data/grouped_month.csv")
+  tsa_bird_data <- read.csv("data/daily_counts.csv")
   tsa_bird_data$observation_date <- as.Date(tsa_bird_data$observation_date)
   tsa_bird_data$month_year <- format(tsa_bird_data$observation_date, "%Y-%m")
   

@@ -26,7 +26,9 @@ library(dbscan)
 library(shinyjs)
 
 # data for species diveristy map
-bird_data <- read.csv("data/ebird_7_reduced.csv")
+#bird_data <- read.csv("data/ebird_7_reduced.csv")
+bird_data <- read.csv("data/knox_birds_reduced.csv")
+
 bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
 
@@ -36,11 +38,12 @@ bird_data <- bird_data %>%
                              "Helmeted Guineafowl", "Nanday Parakeet", "Ring-necked Pheasant", "Red Junglefowl"))
 
 # duplicate to preserve bird_data for the when where bar chart and map
-map_bird_data <- bird_data %>%
-  mutate(observation_count = replace_na(observation_count, 1))
+map_bird_data <- bird_data #%>%
+  #mutate(observation_count = replace_na(observation_count, 1))
 
 # data for TSA
-tsa_bird_data <- read.csv("data/grouped_month.csv")
+#tsa_bird_data <- read.csv("data/grouped_month.csv")
+tsa_bird_data <- read.csv("data/daily_counts.csv")
 tsa_bird_data$observation_date <- as.Date(tsa_bird_data$observation_date)
 tsa_bird_data$month_year <- format(tsa_bird_data$observation_date, "%Y-%m")
 
