@@ -16,7 +16,7 @@ bird_data$month <- format(bird_data$observation_date, "%m")
 # remove unrealistic species (do not naturally occur in Knoxville)
 bird_data <- bird_data %>%
   filter(!common_name %in% c("Mandarin Duck", "Black-headed Parrot", "Indian Peafowl", 
-                             "Helmeted Guineafowl", "Nanday Parakeet", "Ring-necked Pheasant"))
+                             "Helmeted Guineafowl", "Nanday Parakeet", "Ring-necked Pheasant", "Red Junglefowl"))
 
 
 # duplicate to preserve bird_data for the when where bar chart
