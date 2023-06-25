@@ -13,6 +13,12 @@ bird_data <- read.csv("data/ebird_7_reduced.csv")
 bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
 
+# remove unrealistic species (do not naturally occur in Knoxville)
+bird_data <- bird_data %>%
+  filter(!common_name %in% c("Mandarin Duck", "Black-headed Parrot", "Indian Peafowl", 
+                             "Helmeted Guineafowl", "Nanday Parakeet", "Ring-necked Pheasant"))
+
+
 # duplicate to preserve bird_data for the when where bar chart
 map_bird_data <- bird_data %>%
   mutate(observation_count = replace_na(observation_count, 1))
@@ -514,20 +520,23 @@ server <- function(input, output, session) {
         if (input$tabs == "target_tsa") {
           target_species <- input$species
           
-          file_name <- gsub(" ", "_", target_species)
-          file_path <- file.path("www/bird_images/", paste0(file_name, ".jpeg"))
+          file_name <- target_species
+          file_path <- file.path("www/bird_images", paste0(file_name, ".jpeg"))
+          print(file_path)
           
           output$bird_image <- renderImage({
             list(src = file_path,
                  width = "100%",
                  height = "auto")
           }, deleteFile = FALSE)
-        } else if (input$tabs == "target_map") {
+        } 
+        # so that the default loads without initially choosing
+          else if (input$tabs == "target_map") {
           target_species <- input$species_name
-          
-          file_name <- gsub(" ", "_", target_species)
-          file_path <- file.path("www/bird_images/", paste0(file_name, ".jpeg"))
-          
+
+          file_name <- gsub("_", " ", target_species)
+          file_path <- file.path("www/bird_images", paste0(file_name, ".jpeg"))
+          print(file_path)
           output$bird_image_ww <- renderImage({
             list(src = file_path,
                  width = "100%",
@@ -542,9 +551,9 @@ server <- function(input, output, session) {
         if (input$tabs == "target_map") {
           target_species <- input$species_name
           
-          file_name <- gsub(" ", "_", target_species)
-          file_path <- file.path("www/bird_images/", paste0(file_name, ".jpeg"))
-          
+         file_name <- target_species
+          file_path <- file.path("www/bird_images", paste0(file_name, ".jpeg"))
+          print(file_path)
           output$bird_image_ww <- renderImage({
             list(src = file_path,
                  width = "100%",
