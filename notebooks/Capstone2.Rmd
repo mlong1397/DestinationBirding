@@ -1178,6 +1178,10 @@ ebird_7_df %>%
     mutate(observation_count = as.integer(observation_count)) %>%
   summarise(na_count = sum(is.na(observation_count)))
 
+names <- ebird_7_reduced %>%
+  group_by(common_name) %>%
+  summarise(common_name = unique(common_name))
+
 18044/767997
 
 ```
