@@ -405,7 +405,7 @@ fig.show()
 library(zoo)
 library(dplyr)
 
-target_species = "American Goldfinch"
+target_species = "Carolina Wren"
 # Filter the ranked DataFrame for the target species
 grouped_month <- read.csv("data/grouped_month.csv")
 
