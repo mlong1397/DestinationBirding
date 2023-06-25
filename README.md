@@ -33,15 +33,15 @@ or on the github pages tab on the right-hand side of the page.
   - a `www` folder with media (images)
 
 - `docs`
-  - contains the R markdown and html files of the report detailing my process (code heavy), plus non-technical PDFs of my written report and presentation.
+  - contains the R markdown and html files (index.Rmd and index.html) detailing my process (code heavy), plus non-technical PDFs of my written report and presentation.
 
 - `data`
 
-  - contains the csv files and the link to google drive files. The original data was sourced from eBird.
+  - contains the csv files and the link to google drive files. The original data was sourced from eBird. In order to follow the first block of the index.Rmd, it is necessary to download the eBird txt file linked in the `data-links.md`. Or you may skip that step and download `knox_birds.csv` from `data-links.md` only.
 
 - `notebooks`
 
-  - contains the data exploration phases of my project
+  - contains the data exploration phases of my project. These are like scratch sheets and are not well organized. Please see the `index.Rmd` or the rendered index.html file linked at the top of the page under Project Overview instead.
 
 - `.gitignore`
 
