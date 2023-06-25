@@ -222,7 +222,8 @@ server <- function(input, output, session) {
         layout(xaxis = list(title = "Date"),
                yaxis = list(title = "Observation Count"),
                title = paste("Time Series Analysis for", target_species),
-               showlegend = TRUE) %>%
+               showlegend = TRUE,
+               margin = list(t = 80)) %>%
         rangeslider()
       
       
@@ -506,7 +507,8 @@ server <- function(input, output, session) {
                 marker = list(color = "#3c8dbc")) %>%
           layout(xaxis = list(title = "Month"), 
                  yaxis = list(title = "Observations"), 
-                 title = "Total Number of Observations")
+                 title = "Total Number of Observations",
+                 margin = list(t = 80))
       })
       
       ################################################################
