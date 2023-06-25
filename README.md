@@ -33,7 +33,7 @@ or on the github pages tab on the right-hand side of the page.
   - a `www` folder with media (images)
 
 - `docs`
-  - contains the R markdown and html files of the report detailing my process, and a pdf of my presentation.
+  - contains the R markdown and html files of the report detailing my process (code heavy), plus non-technical PDFs of my written report and presentation.
 
 - `data`
 
