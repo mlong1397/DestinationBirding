@@ -10,7 +10,7 @@ output:
 
 # Introduction
 
-The following R Markdown Report walks through a static version of my R Shiny App, [Destination Birding](https://mlong1397.shinyapps.io/DestinationBirding/). The app and this report was completed as a part of my capstone project for BrainStation's Data Science Bootcamp in June of 2023.
+The following R Markdown Report walks through a static version of my R Shiny App, [Destination Birding](https://mlong1397.shinyapps.io/DestinationBirding/). The app and this report were completed as a part of my capstone project for BrainStation's Data Science Bootcamp in June of 2023.
 
 A little bit about me: I have a background in environmental science and several years of GIS experience. I'm a Bird Nerd so I created this app for fellow birders in the Knoxville area! 
 
@@ -18,7 +18,6 @@ A little bit about me: I have a background in environmental science and several 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, out.width = "100%")
 knitr::opts_knit$set(root.dir = "~/capstone-repo-mlong1397")
-
 ```
 
 # Libraries and Imports
@@ -31,11 +30,8 @@ library(sf)
 library(lubridate) # for dates
 library(leaflet)
 library(ggplot2)
-library(viridis)
-library(lattice)
 library(auk) # for ebird
 library(reticulate) # for python
-library(Metrics)
 library(dbscan)
 library(forecast)
 library(plotly)
@@ -48,9 +44,6 @@ My R Shiny App ended up bring written entirely in R, but in the creation process
 ```{python imports, message = FALSE}
 import numpy as np
 import pandas as pd
-
-#for shapefiles
-import geopandas as gpd
 
 #for plotting
 import plotly.express as px
@@ -72,6 +65,7 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 
 
 My data came from eBird, an online database of bird observations providing researchers and amateur naturalists with real-time data about bird distribution and abundance. I have been using the eBird app for several years and have contributed almost 200 checklists of over 500 species. I put in a request with eBird to access seven years of data for Knox County, Tennessee. eBird has their own R package, `auk`, to extract the data from their file. The process is shown below.
+
 ```{r ebird Knox County, eval = FALSE}
 
 # path to the ebird data file
@@ -95,7 +89,7 @@ knox_birds <- f %>%
 
 There are many other specifications that can be included in the code above. For example, only including certain species or certain countries. More information can be found on the [auk github site](https://github.com/CornellLabofOrnithology/auk/blob/main/README.md). For my purposes, I wanted all observations.
 
-Next, I created a data frame with only the relevant columns for my analysis.
+Next, I created a data frame with only the relevant columns for my analysis. In eBird, if a species is only heard but the observer didn't see it, they can mark "heard, not seen." This introduces an X being recorded for `observation_count`, which is turned into a `NaN`. I decided to fill these with ones for the time being. Another interesting approach would be to use Funk Single Value Decomposition to calculate expected values for NAs. 
 
 ``` {r data frame creation, warning = FALSE, message = FALSE}
 
@@ -103,9 +97,18 @@ knox_birds <- read_csv("data/knox_birds.csv")
 
 # select only relevant columns
 knox_birds_reduced <- knox_birds %>%
-  dplyr::select(c(checklist_id, common_name, scientific_name, observation_count, locality, latitude, longitude, observation_date)) %>%
-  mutate(observation_count = as.numeric(observation_count)) # convert to numeric
+  dplyr::select(c(checklist_id, 
+                  common_name, 
+                  scientific_name, 
+                  observation_count, 
+                  locality, 
+                  latitude, 
+                  longitude, 
+                  observation_date)) %>%
+  mutate(observation_count = as.numeric(observation_count)) %>% # convert to numeric
+  mutate(observation_count = replace_na(observation_count, 1)) # fill NaNs created by "heard not seen" with 1
 
+# View the first few rows
 head(knox_birds_reduced, 5)
 
 # group observations by date, and species name to get a daily observation count of each species
@@ -113,6 +116,7 @@ daily_counts <- knox_birds_reduced %>%
   group_by(observation_date, common_name) %>%
   summarise(observation_count = sum(observation_count))
 
+# View the first few rows
 head(daily_counts, 5)
 
 # export csv files to read in to python
@@ -137,11 +141,10 @@ daily_counts.head(5)
 
 # Time Series Analyses
 
-A Time Series Analysis refers to the statistical modeling, forecasting, and interpretation of data that is collected over time.It involves analyzing the patterns, trends, and dependencies present in the data to gain insights, make predictions, and inform decision-making.
+A Time Series Analysis refers to the statistical modeling, forecasting, and interpretation of data that is collected over time. It involves analyzing the patterns, trends, and dependencies present in the data to gain insights, make predictions, and inform decision-making.
 
 To start, I did some data type conversions and checked to see if there are any missing dates.
 ```{python dt conv}
-
 #convert date to datetime
 knox_birds_reduced["observation_date"] = pd.to_datetime(knox_birds_reduced["observation_date"])
 
@@ -167,22 +170,13 @@ There were no missing dates. That means for every day from 2016-2022, at least o
 
 ## Species Diversity in Knox County
 
-The first time series analysis I did was on species diversity. This did not end up in the R Shiny app, but provides some interesting insights. First I make sure the daily counts `observation_date` column is a datetime. In eBird, if a species is only heard but the observer didn't see it, they can mark "heard, not seen." This introduces an X being recorded for `observation_count`, which is turned into a `NaN`. I decided to fill these with ones for the time being. Another interesting approach would be to use Funk Single Value Decomposition to calculate expected values for NAs. 
+The first time series analysis I did was on species diversity. This did not end up in the R Shiny app, but provides some interesting insights. First I make sure the daily counts `observation_date` column is a datetime. 
 
 ```{python dt conv and fillna}
 #convert date to datetime
 daily_counts["observation_date"] = pd.to_datetime(daily_counts["observation_date"])
 
-# fill the NAs which represent heard not seen with 1
-daily_counts.fillna(1, inplace = True)
 ```
-
-```{r fillna, eval=FALSE}
-# Fill the NAs in the "observation_count" column with 1
-daily_counts <- daily_counts %>%
-  mutate(observation_count = replace_na(observation_count, 1))
-```
-
 
 Then, get the number of unique occurrences of common_name (the number of distinct species), and rename the columns for clarity.
 ```{python daily diversity}
@@ -293,7 +287,7 @@ fig3.update_layout(
 
 ```
 
-The next step would be forecasting, but instead I will resume to following the R Shiny App. My point in showing this part of my EDA was to share the interesting insight in the increased number of species diversity seen in Knoxville starting in 2020 as a function of more people getting in to birding during COVID.
+The next step would be forecasting, but instead I will resume to following the R Shiny App. My point in showing this part of my EDA was to share the interesting insight in the increased species diversity seen in Knoxville starting in 2020 as a function of more people getting in to birding during COVID.
 
 ## Predicting Observation Counts for Target Species
 
@@ -302,7 +296,7 @@ The Time Series Analysis tab in *Destination Birding* can be used to predict fut
 I'll start by choosing a bird species and extracting its observations from the daily counts dataframe.
 
 ```{r def target sp}
-target_species = "American Coot"
+target_species = "Carolina Wren"
 
 # Filter the bird observation data for the target species
 target_species_df <- daily_counts %>%
@@ -324,7 +318,7 @@ target_species_month <- target_species_df %>%
   summarise(observation_count = mean(observation_count))
 ```
 
-Now I've grouped the observations of the target species, American Coot, by month and averaged the number of observations.
+Now I've grouped the observations of the target species, Carolina Wren, by month and averaged the number of observations.
 
 ```{r view target species month}
 head(target_species_month, 10)
@@ -373,7 +367,6 @@ Now the data is ready to be split into test and training data. The model will be
 Time for some modeling! I'll first create time series objects and then run the training data through the SARIMA model. More information about SARIMA models can be found [here](https://cran.r-project.org/web/packages/sarima/sarima.pdf)
 
 ```{r SARIMA}
-
 # create time series objects
 train_ts <- ts(train, frequency = 12)
 test_ts <- ts(test, frequency = 12)
@@ -393,8 +386,7 @@ model <- auto.arima(train_ts,
                     start.q = 0,
                     start.P = 0,
                     start.Q = 0,
-
-)
+                    )
 
  # Make predictions
     predictions <- forecast(model, h = length(test_ts))
@@ -408,7 +400,6 @@ model <- auto.arima(train_ts,
 The train data (the first 6 years) has been ran through the model. It has predicted values that we will now visually compare to the actual values from the test data.
 
 ```{r tsa plot, out.width="100%"}
-
 # Filter the target_species_month data for train and test sets
 train_dates <- target_species_month$month_year[target_species_month$month_year < as.yearmon("2022-01")]
 test_dates <- target_species_month$month_year[target_species_month$month_year >= as.yearmon("2022-01")]
@@ -455,7 +446,7 @@ date_train <- as.Date(paste(train_dates, "01"), format = "%b %Y %d")
  time_series_plot
 ```
 
-Upon visual inspection, we can the model did a very good job at predicting the amount of American Coots seen in Knox County in 2021 and 2022!
+Upon visual inspection, we can the model did a good job at predicting the amount of Carolina Wrens seen in Knox County in 2021 and 2022! Carolina Wrens are a common bird and I suspect their increase in observations is also a result of more people birding rather than a true population increase.
 
 # Point Clustering to show Monthly Species Diversity
 
@@ -478,7 +469,7 @@ filtered_data <- bird_data %>%
   filter(month == "06")
 ```
 
-Next I will cluster nearby points into 30 locations using Kmeans, and add in the cluster IDs back to the filtered data frame.
+There were around 7000 unique locations recorded in Knoxville. In order to make use of the data, it's best to group nearby points. I decided to group nearby points into 30 locations using K-means, a clustering algorithm, and add in the cluster IDs back to the filtered data frame.
 
 ```{r kmeans}
 # Perform clustering
@@ -491,7 +482,7 @@ filtered_data$cluster <- clusters$cluster
 head(filtered_data,5)
 ```
 
-The data frame has 40 numbered clusters, so I'll group by the `cluster_id` and for each cluster, add up the number of unique species. 
+The data frame has 40 numbered clusters, so I'll group by the `cluster_id` and for each cluster, add up the number of unique species. <br>
 On eBird, the user can name their location or use an already established one. This can make naming the locality tricky. Ultimately, the point on the map should reflect the name of the place at which people are going to bird. For example, Seven Islands State Birding Park is a popular spot to look for birds. Some people use the full name, some call it "7 islands", "park", etc. My approach was to go with the masses, meaning I'd look for the most frequent locality name in the cluster and use that.
 
 ```{r}
@@ -546,7 +537,7 @@ The final part of the web app shows both a map and bar chart. The bar chart show
 
 ```{r sp and month filter, include=FALSE}
 # read in csv
-bird_data <- read.csv("data/ebird_7_reduced.csv")
+bird_data <- read.csv("data/knox_birds_reduced.csv")
 
 # ensure date type 
 bird_data$observation_date <- as.Date(bird_data$observation_date)
@@ -572,29 +563,31 @@ monthly_avg_counts <- filtered_bar_data %>%
           summarise(monthly_avg = round(mean(observation_count, na.rm = TRUE))) %>%
           mutate(Month = factor(month, levels = unique(month)))
 
- # Create the total sum bar chart using Plotly
-        plot_ly(monthly_sum_counts, 
-                x = ~Month, 
-                y = ~monthly_sum, 
-                type = "bar", 
-                marker = list(color = "#4B8FA6")) %>%
-          layout(xaxis = list(title = "Month"), 
-                 yaxis = list(title = "Observations"), 
-                 title = "Total Number of Observations")
+# Create the total sum bar chart using Plotly
+plot_ly(monthly_sum_counts, 
+        x = ~Month, 
+        y = ~monthly_sum, 
+        type = "bar", 
+        marker = list(color = "#4B8FA6")) %>%
+      layout(xaxis = list(title = "Month"), 
+            yaxis = list(title = "Observations"), 
+            title = "Total Number of Observations")
         
-        # Create the avg bar chart using Plotly
-        plot_ly(monthly_avg_counts, 
-                x = ~Month, 
-                y = ~monthly_avg, 
-                type = "bar", 
-                marker = list(color = "#4B8FA6")) %>%
-          layout(xaxis = list(title = "Month"), 
-                 yaxis = list(title = "Observations"), 
-                 title = "Average Number of Observations")
+# Create the avg bar chart using Plotly
+plot_ly(monthly_avg_counts, 
+        x = ~Month, 
+        y = ~monthly_avg, 
+        type = "bar", 
+        marker = list(color = "#4B8FA6")) %>%
+      layout(xaxis = list(title = "Month"), 
+            yaxis = list(title = "Observations"), 
+            title = "Average Number of Observations")
 ```
 
 These two graphs are almost completely opposite. The average monthly counts graph would lead users to think that American Black Ducks are most likely to be in Knoxville in May. Ducks usually breed far up north during the summer months, so what's going on here? <br>
+
 There is actually only one observation (checklist) for the entire seven years in the month of May! One person saw 4 of these ducks on May 8th, 2016. If I wanted to use averages, I'd need to divide the number of monthly observation counts by 7 (since there are seven years of data). However, this would make a lot of numbers very small and almost meaningless. Instead, I decided to sum all of the observations across the seven years. The point of the graph is to show people when they're most likely to see the bird of interest, not how many of that bird they'll see when they go looking for it. Going to the total sum graph, we can see the winter months are when American Black Ducks are most frequently seen in Knoxville. <br>
+
 As a birder myself, this is something I could have told you from knowing about the bird's life history and migration patterns, but it's nice to have data to back it up! You can read more about American Black Ducks [here](https://www.allaboutbirds.org/guide/American_Black_Duck/maps-range).
 
 
@@ -677,7 +670,7 @@ optimal_minPts <- 0
 optimal_num_clusters <- Inf  # Initialize with a value outside the desired range
 
 ```
-Then `dbscan` loops through all combinations and picks the fewest number of clusters that fall between the numbers 3 and 50.
+Then `dbscan` loops through all combinations and picks the fewest number of clusters that fall between the numbers 3 and 50. On the app, if the data is too sparse/there are too few observations it will throw a warning and won't cluster.
 
 ```{r}
 # Iterate through different parameter combinations
