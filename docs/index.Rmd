@@ -394,7 +394,8 @@ model <- auto.arima(train_ts,
 # Extract the point forecasts from the predictions
     predictions_values <- as.vector(predictions$mean)
     
-
+# View model summary to see what parameters it chose and evaluation metrics
+    summary(model)
 ```
 
 The train data (the first 6 years) has been ran through the model. It has predicted values that we will now visually compare to the actual values from the test data.
