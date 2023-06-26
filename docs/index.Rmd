@@ -296,7 +296,7 @@ The Time Series Analysis tab in *Destination Birding* can be used to predict fut
 I'll start by choosing a bird species and extracting its observations from the daily counts dataframe.
 
 ```{r def target sp}
-target_species = "Carolina Wren"
+target_species = "Purple Finch"
 
 # Filter the bird observation data for the target species
 target_species_df <- daily_counts %>%
