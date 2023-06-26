@@ -2,16 +2,13 @@ library(shiny)
 library(dplyr)
 library(leaflet)
 library(htmltools)
-library(DescTools)
 library(utils)
 library(cluster)
 library(dbscan)
 
 
 # Load and preprocess your bird observation data
-#bird_data <- read.csv("data/ebird_7_reduced.csv")
 bird_data <- read.csv("data/knox_birds_reduced.csv")
-
 bird_data$observation_date <- as.Date(bird_data$observation_date)
 bird_data$month <- format(bird_data$observation_date, "%m")
 
@@ -19,7 +16,6 @@ bird_data$month <- format(bird_data$observation_date, "%m")
 bird_data <- bird_data %>%
   filter(!common_name %in% c("Mandarin Duck", "Black-headed Parrot", "Indian Peafowl", 
                              "Helmeted Guineafowl", "Nanday Parakeet", "Ring-necked Pheasant", "Red Junglefowl"))
-
 
 # duplicate to preserve bird_data for the when where bar chart
 map_bird_data <- bird_data %>%
@@ -102,13 +98,12 @@ server <- function(input, output, session) {
   ################################################################
   
   # Load and preprocess your bird observation data
-  #tsa_bird_data <- read.csv("data/grouped_month.csv")
   tsa_bird_data <- read.csv("data/daily_counts.csv")
   tsa_bird_data$observation_date <- as.Date(tsa_bird_data$observation_date)
   tsa_bird_data$month_year <- format(tsa_bird_data$observation_date, "%Y-%m")
   
     observeEvent(input$species, {
-      
+      tryCatch({ # to prevent crashes for errors
       target_species <- input$species
       
       
@@ -156,6 +151,7 @@ server <- function(input, output, session) {
       test_ts <- ts(test, frequency = 12)
       
       # Fit the SARIMA model
+      
       model <- auto.arima(train_ts,
                           d = 0,
                           D = 1,
@@ -234,9 +230,25 @@ server <- function(input, output, session) {
       
       
       # Render the plotly plot
-      output$time_series_plot_R <- renderPlotly(time_series_plot)
-    
-      
+     output$time_series_plot_R <- renderPlotly(time_series_plot)
+     
+     # In case of errors, output message instead of crashing
+      }, error = function(e) {
+        error_message <- "An error occurred while creating the time series object. Please check your data or try a different species."
+        
+        # Output the error message in the model summary
+        output$modelSummary <- renderPrint({
+          cat(paste0("\n\nError: ", error_message, "\n\n"))
+        })
+        
+        # Show a notification with the error message
+        showNotification(
+          error_message,
+          type = "error",
+          duration = 5  # Duration in seconds
+        )
+        
+      })
       
       ################################################################
       ##################    WHEN AND WHERE MAP      ##################    
