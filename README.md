@@ -19,7 +19,7 @@ or on the github pages tab on the right-hand side of the page.
 
 ### Walkthrough Demo
 
-[video link](https://www.youtube.com/watch?v=mms4AjxmeJs)
+[video link](https://www.youtube.com/embed/2qpYJbUBwGE)
 
 ### Project Organization
 
