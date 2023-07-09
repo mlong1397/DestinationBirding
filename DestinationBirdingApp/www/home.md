@@ -8,5 +8,5 @@ It has been made with [shiny](https://shiny.rstudio.com/) and you may find the c
 
 For a quick walkthrough have a look a the video below.
 <br><br><br>
-<iframe style = "display: block; margin: auto;" width="640" height="360" src="https://www.youtube.com/embed/mms4AjxmeJs"></iframe>
+<iframe style = "display: block; margin: auto;" width="640" height="360" src="https://www.youtube.com/embed/2qpYJbUBwGE"></iframe>
 
